@@ -2,55 +2,58 @@
 
 ## 项目概述
 
-这是一个基于Vue 3、TypeScript和Vite构建的视觉小说（Galgame）推荐系统的前端界面。该项目旨在为用户提供个性化的视觉小说推荐，并提供友好的用户界面来浏览和发现新的游戏。
+这是一个基于 Vue 3、TypeScript 和 Vite 构建的视觉小说（Galgame）推荐系统前端界面。项目旨在为用户提供个性化的 Galgame 推荐、浏览、筛选、注册登录等功能，界面现代美观，交互友好。
+
+## 主要功能
+
+- 用户注册、登录、登出、个人信息管理
+- 游戏列表浏览、详情查看、标签筛选、搜索
+- 首页推荐、热门、最新发布游戏展示
+- 路由权限控制（未登录用户无法访问个人中心等页面）
+- 全局布局与导航栏，404 页面
+- 使用 Pinia 进行状态管理
+- 使用 Element Plus 作为 UI 框架
+- 支持 TypeScript 类型安全
+
+## 技术栈
+
+- Vue 3 (Composition API, `<script setup>`)
+- TypeScript
+- Vite
+- Pinia
+- Vue Router 4
+- Element Plus
+- Axios
 
 ## 项目结构
 
 ```
 .
-├── .gitignore           # Git忽略文件配置
-├── .vscode/             # VSCode编辑器配置
-├── README.md            # 项目文档
-├── index.html           # 入口HTML文件
-├── package.json         # 项目依赖和脚本配置
-├── public/              # 静态资源目录
-│   └── vite.svg         # Vite logo
-├── src/                 # 源代码目录
-│   ├── App.vue          # 应用主组件
-│   ├── assets/          # 资源文件目录
-│   │   └── vue.svg      # Vue logo
-│   ├── components/      # 组件目录
-│   │   └── HelloWorld.vue # 示例组件
-│   ├── main.ts          # 应用入口文件
-│   ├── style.css        # 全局样式
-│   └── vite-env.d.ts    # Vite环境类型声明
-├── tsconfig.json        # TypeScript配置
-├── tsconfig.app.json    # 应用TypeScript配置
-├── tsconfig.node.json   # Node环境TypeScript配置
-└── vite.config.ts       # Vite配置文件
+├── public/                # 静态资源
+├── src/
+│   ├── api/               # API 封装
+│   ├── assets/            # 图片等资源
+│   ├── components/        # 可复用组件
+│   ├── hooks/             # 自定义 hooks
+│   ├── layouts/           # 布局组件
+│   ├── router/            # 路由配置
+│   ├── store/             # Pinia 状态管理
+│   ├── styles/            # 样式
+│   ├── types/             # 类型定义
+│   └── views/             # 页面视图
+├── App.vue                # 应用主入口
+├── main.ts                # 入口文件
+├── vite.config.ts         # Vite 配置
+├── tsconfig*.json         # TypeScript 配置
+└── README.md              # 项目说明
 ```
-
-## 技术栈
-
-- **前端框架**: Vue 3 (^3.5.13)
-- **开发语言**: TypeScript (^5.7.2)
-- **构建工具**: Vite (^6.3.1)
-- **类型检查**: Vue-tsc (^2.2.8)
-- **插件**: @vitejs/plugin-vue (^5.2.2)
-
-## 功能特性
-
-- 基于Vue 3的现代化组件架构
-- 使用TypeScript提供类型安全
-- 采用Vite实现快速的开发体验和构建性能
-- 使用Vue 3的Composition API和`<script setup>`语法糖简化组件开发
 
 ## 开发指南
 
 ### 环境要求
 
 - Node.js (推荐最新LTS版本)
-- npm或yarn包管理器
+- npm 或 yarn 包管理器
 
 ### 安装依赖
 
@@ -78,10 +81,8 @@ npm run preview
 
 ## 项目状态
 
-当前项目处于初始开发阶段，基于Vue 3 + TypeScript + Vite模板创建。主要功能和UI组件尚待实现。
-
-## 原始模板信息
-
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
-
-Learn more about the recommended Project Setup and IDE Support in the [Vue Docs TypeScript Guide](https://vuejs.org/guide/typescript/overview.html#project-setup).
+- 已完成基础页面和路由结构
+- 用户认证、注册、登出、路由守卫等功能已实现
+- 首页、游戏列表、游戏详情、个人中心等页面已搭建
+- 目前部分数据为 mock，后续可对接后端 API
+- UI 基于 Element Plus，支持响应式布局

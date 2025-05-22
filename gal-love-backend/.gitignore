@@ -1,0 +1,24 @@
+# Java/Maven
+/target/
+/out/
+/*.iml
+*.class
+*.log
+
+# IDE
+.idea/
+*.iws
+*.ipr
+*.bak
+*.swp
+*.swo
+*.DS_Store
+
+# OS
+Thumbs.db
+.DS_Store
+
+# 环境配置
+*.local
+*.env
+*.yml.local
