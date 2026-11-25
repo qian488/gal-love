@@ -1,131 +1,136 @@
 import axios from 'axios'
-import type { 
-  ApiResponse, 
-  LoginResponse, 
-  UserInfo, 
-  RegisterData,
-  UpdateProfileData,
-  Game,
-  GameListResponse,
-  GameListParams 
+import type {
+  BackupInfo,
+  BackupResult,
+  DuplicateCandidate,
+  Entry,
+  EntryInput,
+  EntryListResponse,
+  FeedbackInput,
+  HealthResponse,
+  ImportBangumiInput,
+  ImportScheduledResponse,
+  ImportVndbInput,
+  ManualWorkInput,
+  MergeResult,
+  RecommendationQuery,
+  RecommendationResponse,
+  RestoreResult,
+  Settings,
+  SettingsPatch,
+  Stats,
+  SyncRunListResponse,
+  TagListResponse,
+  VotesImportInput,
+  VotesImportResult,
+  VotesStats,
+  Work,
+  WorkListResponse,
+  WorkQuery,
 } from '../types/api'
 
-// 创建axios实例
-const api = axios.create({
-  baseURL: '/api',  // 使用相对路径，让vite的代理来处理
-  timeout: 15000,
-  headers: {
-    'Content-Type': 'application/json'
-  },
-  withCredentials: true // 允许跨域携带cookie
+const http = axios.create({
+  baseURL: '/api',
+  timeout: 30000,
+  headers: { 'Content-Type': 'application/json' },
 })
 
-// 请求拦截器
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token')
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
-    }
-    return config
-  },
+http.interceptors.response.use(
+  (response) => response,
   (error) => {
-    return Promise.reject(error)
-  }
-)
-
-// 响应拦截器
-api.interceptors.response.use(
-  (response) => {
-    return response.data
-  },  (error) => {
-    console.error('API Error:', error);
-    let message = '网络错误，请检查您的网络连接';
-    
-    if (error.response) {
-      // 优先使用后端返回的错误信息
-      const responseData = error.response.data;
-      message = responseData?.message || responseData?.error || responseData || message;
-      
-      switch (error.response.status) {
-        case 401:
-          // 未授权，清除token并跳转到登录页
-          localStorage.removeItem('token');
-          if (!window.location.pathname.includes('/login')) {
-            window.location.href = '/login';
-          }
-          message = '登录已过期，请重新登录';
-          break;
-        case 403:
-          message = '权限不足，请重新登录';
-          break;
-        case 404:
-          message = '请求的资源不存在';
-          break;
-        case 400:
-          // 处理验证错误
-          if (responseData?.errors) {
-            message = Object.values(responseData.errors).join(', ');
-          }
-          break;
-      }
-    } else if (error.request) {
-      message = '服务器无响应，请稍后重试';
+    const data = error.response?.data
+    let message = '网络错误，请确认 gal-love-core 已运行在 8000 端口'
+    if (typeof data?.detail === 'string') {
+      message = data.detail
+    } else if (Array.isArray(data?.detail)) {
+      message = data.detail.map((item: { msg?: string }) => item.msg).filter(Boolean).join('；')
+    } else if (error.response) {
+      message = `请求失败（${error.response.status}）`
+    } else if (error.code === 'ECONNABORTED') {
+      message = '请求超时，请稍后重试'
     }
-    
-    return Promise.reject(new Error(message));
-  }
+    return Promise.reject(new Error(message))
+  },
 )
 
-// 用户相关接口
-export const userApi = {
-  // 用户登录
-  login: (data: { username: string; password: string }): Promise<ApiResponse<LoginResponse>> => {
-    return api.post('/auth/login', data)
-  },
-  
-  // 用户注册
-  register: (data: RegisterData): Promise<ApiResponse<void>> => {
-    return api.post('/auth/register', data)
-  },
-  
-  // 获取用户信息
-  getUserInfo: (): Promise<ApiResponse<UserInfo>> => {
-    return api.get('/user/profile')
-  },
-  
-  // 更新用户信息
-  updateProfile: (data: UpdateProfileData): Promise<ApiResponse<UserInfo>> => {
-    return api.put('/user/profile', data)
-  }
+async function get<T>(url: string, params?: object): Promise<T> {
+  const response = await http.get(url, { params })
+  return response.data as T
 }
 
-// 游戏相关接口
-export const gameApi = {
-  // 获取游戏列表
-  getGames: (params?: GameListParams): Promise<ApiResponse<GameListResponse>> => {
-    return api.get('/games', { params })
-  },
-  
-  // 获取游戏详情
-  getGameDetail: (id: string): Promise<ApiResponse<Game>> => {
-    return api.get(`/games/${id}`)
-  },
-  
-  // 获取推荐游戏
-  getRecommendations: (): Promise<ApiResponse<Game[]>> => {
-    return api.get('/games/recommendations')
-  },
-  
-  // 添加游戏评分
-  rateGame: (gameId: string, rating: number): Promise<ApiResponse<void>> => {
-    return api.post(`/games/${gameId}/rate`, { rating })
-  },
-  
-  // 添加游戏评论
-  addComment: (gameId: string, content: string): Promise<ApiResponse<void>> => {
-    return api.post(`/games/${gameId}/comments`, { content })
-  }
+async function post<T>(url: string, data?: unknown): Promise<T> {
+  const response = await http.post(url, data)
+  return response.data as T
+}
+
+async function put<T>(url: string, data?: unknown): Promise<T> {
+  const response = await http.put(url, data)
+  return response.data as T
+}
+
+async function remove<T>(url: string): Promise<T> {
+  const response = await http.delete(url)
+  return response.data as T
+}
+
+export const api = {
+  health: () => get<HealthResponse>('/health'),
+  stats: () => get<Stats>('/stats'),
+
+  works: (params: WorkQuery = {}) => get<WorkListResponse>('/works', params),
+  work: (id: number) => get<Work>(`/works/${id}`),
+  similar: (id: number, limit = 8) => get<{ items: Work[] }>(`/works/${id}/similar`, { limit }),
+  tags: (params: { q?: string; limit?: number } = {}) => get<TagListResponse>('/tags', params),
+
+  recommendations: (params: RecommendationQuery = {}) =>
+    get<RecommendationResponse>('/recommendations', params),
+
+  entries: () => get<EntryListResponse>('/me/entries'),
+  saveEntry: (workId: number, data: EntryInput) => put<Work>(`/me/entries/${workId}`, data),
+  deleteEntry: (workId: number) => remove<{ ok: boolean }>(`/me/entries/${workId}`),
+
+  feedback: (data: FeedbackInput) => post<{ ok: boolean }>('/feedback', data),
+
+  settings: () => get<Settings>('/settings'),
+  saveSettings: (data: SettingsPatch) => put<Settings>('/settings', data),
+
+  createWork: (data: ManualWorkInput) => post<Work>('/admin/works', data),
+  importVndb: (data: ImportVndbInput) =>
+    post<ImportScheduledResponse>('/admin/import/vndb', data),
+  importBangumi: (data: ImportBangumiInput) =>
+    post<ImportScheduledResponse>('/admin/import/bangumi', data),
+  syncRuns: (limit = 10) => get<SyncRunListResponse>('/admin/sync-runs', { limit }),
+
+  // 数据治理：重复检测与合并
+  duplicates: (limit = 50, minScore = 0.75) =>
+    get<{ items: DuplicateCandidate[] }>('/admin/duplicates', { limit, min_score: minScore }),
+  mergeWorks: (sourceId: number, targetId: number) =>
+    post<MergeResult>('/admin/works/merge', { source_id: sourceId, target_id: targetId }),
+
+  // 备份与恢复
+  backups: () => get<{ items: BackupInfo[] }>('/admin/backups'),
+  createBackup: () => post<BackupResult>('/admin/backup'),
+  restoreBackup: (filename: string) =>
+    post<RestoreResult>('/admin/restore', { filename }),
+
+  // VNDB 票数库
+  votesStats: () => get<VotesStats>('/admin/votes/stats'),
+  importVotes: (data: VotesImportInput) =>
+    post<VotesImportResult>('/admin/votes/import', data),
+}
+
+export const entryStatusLabels: Record<Entry['status'], string> = {
+  want: '想玩',
+  playing: '在玩',
+  finished: '玩过',
+  dropped: '弃坑',
+}
+
+export const entryStatusColors: Record<Entry['status'], string> = {
+  want: '#409eff',
+  playing: '#e6a23c',
+  finished: '#67c23a',
+  dropped: '#909399',
 }
 
 export default api

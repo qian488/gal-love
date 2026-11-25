@@ -1,415 +1,691 @@
 <template>
-  <div class="home-container">
-    <div class="hero-section">
-      <div class="hero-content">
-        <h1>Gal Love</h1>
-        <p>发现你的下一个最爱游戏</p>
-        <div style="margin-top: 32px;">
-          <el-input v-model="searchQuery" placeholder="搜索游戏..." style="width: 240px; margin-right: 12px;" @keyup.enter="handleSearch" />
-          <el-button type="primary" @click="handleSearch">搜索</el-button>
+  <div class="home">
+    <transition name="intro-fade">
+      <div v-if="showIntroBar" class="intro-bar">
+        <div class="intro-bar-inner">
+          <el-icon class="intro-icon"><MagicStick /></el-icon>
+          <span class="intro-text">
+            <strong>第一次来？</strong>
+            挑 3–5 部喜欢的作品，让推荐从「热门」变成「像你喜欢的」。
+          </span>
+          <div class="intro-actions">
+            <el-button type="primary" size="small" round @click="router.push('/onboarding')">
+              开始引导
+            </el-button>
+            <el-button text size="small" @click="dismissIntroBar">不再提示</el-button>
+          </div>
         </div>
       </div>
-    </div>
+    </transition>
 
-    <div class="content-section">
-      <div class="recommendation-cards">
-        <el-card 
-          v-for="game in featuredGames" 
-          :key="game.id"
-          class="game-card"
-          @click="navigateToGame(game.id)"
-        >
-          <div class="card-content">
-            <div class="card-header">
-              <img :src="game.coverImage" :alt="game.title" class="game-cover" />
-              <div class="game-info">
-                <h2>{{ game.title }}</h2>
-                <p class="game-meta">{{ game.developer }} | {{ game.releaseDate }}</p>
-                <div class="game-tags">
-                  <el-tag 
-                    v-for="tag in game.tags" 
-                    :key="tag"
-                    size="small"
-                    class="game-tag"
-                  >
-                    {{ tag }}
-                  </el-tag>
-                </div>
+    <section class="hero">
+      <div class="hero-inner">
+        <div class="hero-copy">
+          <span class="eyebrow">PERSONAL VISUAL NOVEL RECOMMENDER</span>
+          <h1>下一部，玩什么？</h1>
+          <p>记住你的口味，从视觉小说里挑出下一部值得玩的。</p>
+          <div class="search-row">
+            <el-input
+              v-model="search"
+              size="large"
+              placeholder="搜索作品、别名或简介…"
+              clearable
+              @keyup.enter="openSearch"
+            >
+              <template #prefix>
+                <el-icon><Search /></el-icon>
+              </template>
+            </el-input>
+            <el-button size="large" type="primary" @click="openSearch">去探索</el-button>
+          </div>
+          <div class="hero-stats">
+            <span><strong>{{ store.stats?.works ?? '—' }}</strong> 部作品</span>
+            <span><strong>{{ store.stats?.tags ?? '—' }}</strong> 个标签</span>
+            <span><strong>{{ counts.finished }}</strong> 部玩过</span>
+          </div>
+        </div>
+
+        <div class="hero-art" aria-hidden="true">
+          <div class="orb orb-a" />
+          <div class="orb orb-b" />
+          <div class="glass-card">
+            <span class="glass-label">今日推荐</span>
+            <p>{{ store.recommendations[0]?.title ?? '等待你的口味画像' }}</p>
+            <small>{{ store.recommendations[0]?.reason ?? '记录几部喜欢的作品后，这里会出现推荐理由' }}</small>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="layout">
+      <main class="main-column">
+        <div class="section-head">
+          <div>
+            <h2>为你推荐</h2>
+            <p v-if="store.hasProfile">基于你的游戏库与反馈实时计算，越用越准。</p>
+            <p v-else>还没有口味画像，完成引导并记录至少 3 部作品即可获得推荐。</p>
+          </div>
+          <el-tag effect="plain" round>{{ store.algorithmVersion }}</el-tag>
+        </div>
+
+        <div v-loading="store.loadingRecommendations" class="recommendation-list">
+          <WorkCard
+            v-for="work in store.recommendations"
+            :key="work.id"
+            :work="work"
+            reason
+          >
+            <template #actions>
+              <div class="card-actions" @click.stop>
+                <el-button
+                  size="small"
+                  :loading="addingId === work.id"
+                  @click="quickWant(work)"
+                >
+                  想玩
+                </el-button>
+                <el-button size="small" type="primary" plain @click="openEntry(work)">
+                  记录
+                </el-button>
+                <el-button size="small" text @click="notInterested(work)">
+                  不感兴趣
+                </el-button>
               </div>
+            </template>
+          </WorkCard>
+        </div>
+
+        <el-empty
+          v-if="!store.loadingRecommendations && !store.recommendations.length"
+          description="挑几部喜欢的作品，推荐会更懂你"
+        >
+          <el-button type="primary" @click="router.push('/onboarding')">
+            开始冷启动引导
+          </el-button>
+          <el-button @click="router.push('/explore')">自己去探索</el-button>
+        </el-empty>
+
+        <div class="section-head secondary">
+          <div>
+            <h2>继续探索</h2>
+            <p>按评分、人气或发售时间浏览。</p>
+          </div>
+          <el-button text type="primary" @click="router.push('/explore')">
+            全部作品 <el-icon><ArrowRight /></el-icon>
+          </el-button>
+        </div>
+
+        <div class="explore-strip">
+          <div v-for="(tip, index) in tips" :key="tip.title" class="tip-card">
+            <span class="tip-index">0{{ index + 1 }}</span>
+            <h3>{{ tip.title }}</h3>
+            <p>{{ tip.description }}</p>
+            <el-button text type="primary" @click="router.push(tip.to)">
+              {{ tip.action }} <el-icon><ArrowRight /></el-icon>
+            </el-button>
+          </div>
+        </div>
+      </main>
+
+      <aside class="side-column">
+        <section class="panel profile-panel">
+          <div class="panel-head">
+            <h2>我的口味</h2>
+            <el-button text type="primary" @click="router.push('/library')">游戏库</el-button>
+          </div>
+
+          <div class="status-grid">
+            <div class="status-cell">
+              <strong>{{ counts.finished }}</strong>
+              <span>玩过</span>
             </div>
-            <div class="game-description">
-              {{ game.description }}
+            <div class="status-cell">
+              <strong>{{ counts.playing }}</strong>
+              <span>在玩</span>
             </div>
-            <div class="game-rating">
-              <el-rate v-model="game.rating" disabled show-score />
-              <span class="rating-count">({{ game.totalRatings }}人评分)</span>
+            <div class="status-cell">
+              <strong>{{ counts.want }}</strong>
+              <span>想玩</span>
+            </div>
+            <div class="status-cell">
+              <strong>{{ counts.dropped }}</strong>
+              <span>弃坑</span>
             </div>
           </div>
-        </el-card>
-      </div>
 
-      <div class="section-divider">
-        <h2>热门推荐</h2>
-        <el-button type="primary" text @click="$router.push('/games')">
-          查看更多 <el-icon><arrow-right /></el-icon>
-        </el-button>
-      </div>
-
-      <div class="popular-games">
-        <el-carousel :interval="4000" type="card" height="400px">
-          <el-carousel-item v-for="game in popularGames" :key="game.id">
-            <div class="carousel-game" @click="navigateToGame(game.id)">
-              <img :src="game.coverImage" :alt="game.title" />
-              <div class="carousel-content">
-                <h3>{{ game.title }}</h3>
-                <p>{{ game.description }}</p>
-              </div>
+          <template v-if="store.hasProfile">
+            <h3 class="sub-title">偏爱的题材</h3>
+            <div class="taste-tags">
+              <el-tag
+                v-for="tag in store.tasteTags"
+                :key="tag.name"
+                round
+                effect="light"
+              >
+                {{ tag.name }}
+              </el-tag>
+              <span v-if="!store.tasteTags.length" class="muted">
+                给作品打高分后，这里会总结你的偏好。
+              </span>
             </div>
-          </el-carousel-item>
-        </el-carousel>
-      </div>
+          </template>
 
-      <div class="section-divider">
-        <h2>最新发布</h2>
-        <el-button type="primary" text @click="$router.push('/games')">
-          查看更多 <el-icon><arrow-right /></el-icon>
-        </el-button>
-      </div>
+          <div v-else class="onboarding">
+            <el-icon><MagicStick /></el-icon>
+            <h3>建立你的口味画像</h3>
+            <p>挑 3–5 部喜欢的作品，让推荐更懂你。</p>
+            <el-button type="primary" round @click="router.push('/onboarding')">
+              开始引导
+            </el-button>
+          </div>
+        </section>
 
-      <div class="new-releases">
-        <el-row :gutter="20">
-          <el-col 
-            v-for="game in newReleases" 
-            :key="game.id" 
-            :xs="12" 
-            :sm="8" 
-            :md="6"
-          >
-            <el-card 
-              class="new-game-card"
-              @click="navigateToGame(game.id)"
-              :body-style="{ padding: '0px' }"
-            >
-              <img :src="game.coverImage" :alt="game.title" class="new-game-image"/>
-              <div class="new-game-info">
-                <h3>{{ game.title }}</h3>
-                <div class="new-game-meta">
-                  <el-rate v-model="game.rating" disabled />
-                  <span>{{ game.releaseDate }}</span>
-                </div>
-              </div>
-            </el-card>
-          </el-col>
-        </el-row>
-      </div>
-    </div>
+      </aside>
+    </section>
+
+    <EntryDialog v-model="entryDialogVisible" :work="activeWork" @saved="handleSaved" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, getCurrentInstance } from 'vue'
-import { ArrowRight } from '@element-plus/icons-vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { ArrowRight, MagicStick, Search } from '@element-plus/icons-vue'
+import EntryDialog from '../components/EntryDialog.vue'
+import WorkCard from '../components/WorkCard.vue'
+import { useCatalogStore, type RecommendationParams } from '../store/game'
+import type { Work } from '../types/api'
 
-const searchQuery = ref('')
+const store = useCatalogStore()
+const router = useRouter()
 
-// 模拟特色游戏数据
-const featuredGames = ref([
-  {
-    id: 1,
-    title: '星空的记忆',
-    developer: 'Love Game Studio',
-    releaseDate: '2025-05-01',
-    coverImage: 'https://via.placeholder.com/300x400',
-    description: '在未来科技与浪漫交织的世界中，探索一段跨越时空的爱情故事...',
-    tags: ['科幻', '恋爱', '剧情'],
-    rating: 4.8,
-    totalRatings: 1234
-  },
-  {
-    id: 2,
-    title: '樱花校园物语',
-    developer: 'Cherry Blossom Games',
-    releaseDate: '2025-04-15',
-    coverImage: 'https://via.placeholder.com/300x400',
-    description: '在充满青春气息的校园中，邂逅各具特色的同学，编织属于你的校园恋爱故事...',
-    tags: ['校园', '日常', '恋爱'],
-    rating: 4.6,
-    totalRatings: 856
-  }
-])
+const onboardKey = 'gal-love-onboard-v1'
 
-// 模拟热门游戏数据
-const popularGames = ref([
-  {
-    id: 3,
-    title: '魔法少女的秘密',
-    coverImage: 'https://via.placeholder.com/800x400',
-    description: '在现代都市中邂逅魔法，成为守护和平的魔法少女...'
-  },
-  {
-    id: 4,
-    title: '千年之恋',
-    coverImage: 'https://via.placeholder.com/800x400',
-    description: '穿越千年时空，寻找命中注定的那个人...'
-  },
-  {
-    id: 5,
-    title: '未来都市恋曲',
-    coverImage: 'https://via.placeholder.com/800x400',
-    description: '在赛博朋克风格的未来都市中，展开一段跨越人机界限的爱情...'
-  }
-])
-
-// 模拟最新发布游戏数据
-const newReleases = ref([
-  {
-    id: 6,
-    title: '梦境探险家',
-    coverImage: 'https://via.placeholder.com/200x300',
-    rating: 4.5,
-    releaseDate: '2025-05-20'
-  },
-  {
-    id: 7,
-    title: '平行世界的你',
-    coverImage: 'https://via.placeholder.com/200x300',
-    rating: 4.7,
-    releaseDate: '2025-05-18'
-  },
-  {
-    id: 8,
-    title: '古典音乐恋歌',
-    coverImage: 'https://via.placeholder.com/200x300',
-    rating: 4.6,
-    releaseDate: '2025-05-15'
-  },
-  {
-    id: 9,
-    title: '人工智能爱恋',
-    coverImage: 'https://via.placeholder.com/200x300',
-    rating: 4.8,
-    releaseDate: '2025-05-10'
-  }
-])
-
-const internalInstance = getCurrentInstance()
-const $router = internalInstance?.proxy?.$router
-
-const handleSearch = () => {
-  if (searchQuery.value.trim() && $router) {
-    $router.push({ path: '/games', query: { search: searchQuery.value } })
+function hasOnboardFlag(): boolean {
+  try {
+    return localStorage.getItem(onboardKey) === 'done'
+  } catch {
+    return false
   }
 }
 
-const navigateToGame = (gameId: number) => {
-  if ($router) {
-    $router.push(`/games/${gameId}`)
+const showIntroBar = ref(!hasOnboardFlag())
+
+function dismissIntroBar() {
+  showIntroBar.value = false
+  try {
+    localStorage.setItem(onboardKey, 'done')
+  } catch {
+    // 隐私模式下写入失败时，仅隐藏本次会话的提示
   }
 }
+
+const search = ref('')
+const entryDialogVisible = ref(false)
+const activeWork = ref<Work | null>(null)
+const addingId = ref<number | null>(null)
+
+const counts = computed(() => store.entryCounts)
+
+// 用当前设置发起推荐请求，保证推荐结果与设置页保持一致。
+function recommendationParams(): RecommendationParams {
+  const s = store.settings
+  return {
+    limit: 12,
+    include_nsfw: s.include_nsfw,
+    min_year: s.min_year ?? undefined,
+    max_length_minutes: s.max_length_minutes ?? undefined,
+    platform: s.platform ?? undefined,
+    language: s.language ?? undefined,
+    diversity: s.diversity,
+  }
+}
+
+const tips = [
+  {
+    title: '从口碑开始',
+    description: '按 VNDB 评分和投票数浏览，快速认识经典作品。',
+    action: '浏览高分作品',
+    to: '/explore?sort=rating',
+  },
+  {
+    title: '按标签找',
+    description: '悬疑、恋爱、科幻、治愈……用标签缩小范围。',
+    action: '按标签筛选',
+    to: '/explore',
+  },
+  {
+    title: '维护口味',
+    description: '在设置里调整 NSFW、年代、时长与多样性。',
+    action: '打开设置',
+    to: '/settings',
+  },
+]
+
+function openSearch() {
+  router.push({ path: '/explore', query: search.value.trim() ? { q: search.value.trim() } : {} })
+}
+
+function openEntry(work: Work) {
+  activeWork.value = work
+  entryDialogVisible.value = true
+}
+
+async function quickWant(work: Work) {
+  addingId.value = work.id
+  try {
+    await store.saveEntry(work.id, { status: 'want' })
+    ElMessage.success(`已把《${work.title}》加入想玩`)
+    await store.fetchRecommendations(recommendationParams())
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '操作失败')
+  } finally {
+    addingId.value = null
+  }
+}
+
+async function notInterested(work: Work) {
+  try {
+    await store.markNotInterested(work.id)
+    ElMessage.success('已记录反馈，会减少类似推荐')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '操作失败')
+  }
+}
+
+async function handleSaved() {
+  await Promise.all([
+    store.fetchRecommendations(recommendationParams()),
+    store.fetchEntries(),
+    store.loadStats(),
+  ])
+}
+
+onMounted(async () => {
+  await Promise.all([store.fetchEntries(), store.loadStats()])
+  // 先加载设置，再据此请求推荐，避免首次进入时推荐与设置不一致。
+  await store.fetchSettings()
+  await store.fetchRecommendations(recommendationParams())
+})
 </script>
 
 <style scoped>
-.home-container {
-  min-height: 100vh;
+.home {
+  padding: 0 0 56px;
 }
 
-.hero-section {
-  height: 500px;
-  background-image: url('https://via.placeholder.com/1920x500');
-  background-size: cover;
-  background-position: center;
+.intro-bar {
+  background: linear-gradient(90deg, #efeaff, #f8eafc);
+  border-bottom: 1px solid rgba(123, 92, 255, 0.16);
+}
+
+.intro-bar-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 10px 28px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: white;
-  position: relative;
-  margin-bottom: 40px;
+  gap: 12px;
+  font-size: 13px;
+  color: #5f5878;
 }
 
-.hero-section::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+.intro-icon {
+  color: #8a6cff;
+  font-size: 18px;
 }
 
-.hero-content {
-  position: relative;
-  text-align: center;
-  z-index: 1;
-  max-width: 600px;
-  padding: 0 20px;
-}
-
-.hero-content h1 {
-  font-size: 3em;
-  margin-bottom: 20px;
-}
-
-.hero-content p {
-  font-size: 1.2em;
-  margin-bottom: 30px;
-}
-
-.search-input {
-  width: 100%;
-}
-
-.content-section {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px;
-}
-
-.recommendation-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  margin-bottom: 40px;
-}
-
-.game-card {
-  cursor: pointer;
-  transition: transform 0.3s;
-}
-
-.game-card:hover {
-  transform: translateY(-5px);
-}
-
-.card-content {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
-
-.card-header {
-  display: flex;
-  gap: 20px;
-}
-
-.game-cover {
-  width: 200px;
-  height: 280px;
-  object-fit: cover;
-  border-radius: 8px;
-}
-
-.game-info {
+.intro-text {
   flex: 1;
-}
-
-.game-info h2 {
-  margin: 0 0 10px;
-  font-size: 1.5em;
-}
-
-.game-meta {
-  color: #666;
-  margin-bottom: 10px;
-}
-
-.game-tags {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.game-description {
-  color: #666;
   line-height: 1.6;
 }
 
-.game-rating {
+.intro-text strong {
+  color: #382e63;
+}
+
+.intro-actions {
   display: flex;
   align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.intro-fade-enter-active,
+.intro-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.intro-fade-enter-from,
+.intro-fade-leave-to {
+  opacity: 0;
+}
+
+.hero {
+  background:
+    radial-gradient(circle at 15% 20%, rgba(137, 110, 255, 0.4), transparent 45%),
+    radial-gradient(circle at 85% 10%, rgba(255, 150, 200, 0.35), transparent 40%),
+    linear-gradient(135deg, #211b3c 0%, #35285f 55%, #4a2d63 100%);
+  color: #fff;
+  border-radius: 0 0 32px 32px;
+}
+
+.hero-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 64px 28px 72px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
+  gap: 40px;
+  align-items: center;
+}
+
+.eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.hero h1 {
+  margin: 14px 0 16px;
+  font-size: clamp(36px, 5vw, 56px);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+}
+
+.hero-copy > p {
+  max-width: 560px;
+  margin: 0 0 28px;
+  color: rgba(255, 255, 255, 0.76);
+  line-height: 1.9;
+}
+
+.search-row {
+  display: flex;
   gap: 10px;
+  max-width: 540px;
 }
 
-.rating-count {
-  color: #909399;
-}
-
-.section-divider {
+.hero-stats {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin: 40px 0 20px;
+  gap: 26px;
+  margin-top: 26px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.65);
 }
 
-.section-divider h2 {
-  margin: 0;
+.hero-stats strong {
+  color: #fff;
+  font-size: 16px;
+  margin-right: 4px;
 }
 
-.carousel-game {
-  height: 100%;
-  cursor: pointer;
+.hero-art {
   position: relative;
+  min-height: 280px;
 }
 
-.carousel-game img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 8px;
-}
-
-.carousel-content {
+.orb {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 20px;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
-  color: white;
-  border-radius: 0 0 8px 8px;
+  border-radius: 50%;
+  filter: blur(2px);
 }
 
-.carousel-content h3 {
-  margin: 0 0 10px;
+.orb-a {
+  width: 190px;
+  height: 190px;
+  top: 0;
+  right: 30px;
+  background: linear-gradient(135deg, rgba(255, 190, 225, 0.65), rgba(160, 120, 255, 0.15));
 }
 
-.carousel-content p {
+.orb-b {
+  width: 120px;
+  height: 120px;
+  bottom: 12px;
+  left: 10px;
+  background: linear-gradient(135deg, rgba(140, 210, 255, 0.5), rgba(120, 90, 255, 0.1));
+}
+
+.glass-card {
+  position: relative;
+  margin-top: 64px;
+  padding: 22px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.2);
+}
+
+.glass-label {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.glass-card p {
+  margin: 10px 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.glass-card small {
+  color: rgba(255, 255, 255, 0.68);
+  line-height: 1.7;
+  display: block;
+}
+
+.layout {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 40px 28px 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 28px;
+  align-items: start;
+}
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.section-head.secondary {
+  margin-top: 40px;
+}
+
+.section-head h2,
+.panel h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+
+.section-head p {
   margin: 0;
-  opacity: 0.8;
+  color: #8a8fa3;
+  font-size: 13px;
 }
 
-.new-game-card {
-  cursor: pointer;
-  transition: transform 0.3s;
-  margin-bottom: 20px;
+.recommendation-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 18px;
+  min-height: 120px;
 }
 
-.new-game-card:hover {
-  transform: translateY(-5px);
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
 }
 
-.new-game-image {
-  width: 100%;
-  height: 280px;
-  object-fit: cover;
+.card-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
-.new-game-info {
-  padding: 15px;
+.explore-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
 }
 
-.new-game-info h3 {
-  margin: 0 0 10px;
-  font-size: 1.1em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.tip-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 20px;
+  border: 1px solid rgba(31, 35, 64, 0.06);
 }
 
-.new-game-meta {
+.tip-index {
+  font-size: 12px;
+  color: #b3a7e6;
+  letter-spacing: 0.1em;
+}
+
+.tip-card h3 {
+  margin: 8px 0;
+  font-size: 16px;
+}
+
+.tip-card p {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #7d8296;
+}
+
+.side-column {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  position: sticky;
+  top: 76px;
+}
+
+.panel {
+  background: #fff;
+  border-radius: 16px;
+  padding: 20px;
+  border: 1px solid rgba(31, 35, 64, 0.06);
+  box-shadow: 0 10px 30px rgba(31, 35, 64, 0.05);
+}
+
+.panel-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.9em;
-  color: #666;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 18px 0;
+}
+
+.status-cell {
+  text-align: center;
+  padding: 12px 4px;
+  border-radius: 10px;
+  background: #f7f6fc;
+}
+
+.status-cell strong {
+  display: block;
+  font-size: 20px;
+  color: #382e63;
+}
+
+.status-cell span {
+  font-size: 12px;
+  color: #8a8fa3;
+}
+
+.sub-title {
+  margin: 18px 0 10px;
+  font-size: 14px;
+}
+
+.taste-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.muted {
+  color: #9a9fb0;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.onboarding {
+  text-align: center;
+  padding: 20px 8px 8px;
+  color: #6f678e;
+}
+
+.onboarding .el-icon {
+  font-size: 30px;
+  color: #8a6cff;
+}
+
+.onboarding h3 {
+  margin: 10px 0 8px;
+  color: #2f2a44;
+}
+
+.onboarding p {
+  font-size: 13px;
+  line-height: 1.75;
+  margin: 0 0 16px;
+}
+
+@media (max-width: 960px) {
+  .hero-inner,
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-art {
+    display: none;
+  }
+
+  .side-column {
+    position: static;
+  }
+
+  .explore-strip {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .search-row {
+    flex-direction: column;
+  }
+
+  .intro-bar-inner {
+    padding: 10px 16px;
+    flex-wrap: wrap;
+  }
+
+  .intro-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .hero-inner {
+    padding: 44px 20px 52px;
+  }
+
+  .layout {
+    padding: 28px 16px 0;
+  }
 }
 </style>

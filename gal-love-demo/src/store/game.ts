@@ -1,150 +1,194 @@
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import type { Game, GameListResponse } from '../types/api'
-import { gameApi } from '../api'
 import { ElMessage } from 'element-plus'
+import { api } from '../api'
+import type {
+  Entry,
+  EntryInput,
+  EntryStatus,
+  RecommendationQuery,
+  Settings,
+  SettingsPatch,
+  Stats,
+  Work,
+} from '../types/api'
 
-export interface GameFilter {
-  page: number
-  pageSize: number
-  sortBy: string
-  sortOrder: 'asc' | 'desc'
-  tags?: string[]
-  search?: string
+/** 推荐请求参数：在后端 RecommendationQuery 之上允许显式指定算法版本。 */
+export type RecommendationParams = RecommendationQuery & { algorithm?: string }
+
+const defaultSettings: Settings = {
+  include_nsfw: false,
+  min_year: null,
+  max_length_minutes: null,
+  platform: null,
+  language: null,
+  diversity: 0.15,
 }
 
-export const useGameStore = defineStore('game', () => {
-  const games = ref<Game[]>([])
-  const loading = ref(false)
-  const total = ref(0)
-  const currentGame = ref<Game | null>(null)
-  const recommendations = ref<Game[]>([])
-  const currentFilter = ref<GameFilter>({
-    page: 1,
-    pageSize: 12,
-    sortBy: 'rating',
-    sortOrder: 'desc'
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : '请求失败'
+}
+
+export const useCatalogStore = defineStore('catalog', () => {
+  const recommendations = ref<Work[]>([])
+  const entries = ref<Work[]>([])
+  const settings = ref<Settings>({ ...defaultSettings })
+  const stats = ref<Stats | null>(null)
+  const algorithmVersion = ref('content-v1')
+  const loadingRecommendations = ref(false)
+  const loadingEntries = ref(false)
+
+  const entryMap = computed(() => {
+    const map = new Map<number, Entry>()
+    for (const work of entries.value) {
+      if (work.entry) map.set(work.id, work.entry)
+    }
+    return map
   })
 
-  const filteredGames = computed(() => {
-    let filtered = [...games.value]
-    
-    if (currentFilter.value.search) {
-      const query = currentFilter.value.search.toLowerCase()
-      filtered = filtered.filter(game => 
-        game.title.toLowerCase().includes(query) ||
-        game.description.toLowerCase().includes(query)
-      )
+  const entryCounts = computed<Record<EntryStatus, number>>(() => {
+    const counts: Record<EntryStatus, number> = {
+      want: 0,
+      playing: 0,
+      finished: 0,
+      dropped: 0,
     }
-
-    if (currentFilter.value.tags?.length) {
-      filtered = filtered.filter(game =>
-        currentFilter.value.tags!.every(tag => game.tags.includes(tag))
-      )
+    for (const entry of entryMap.value.values()) {
+      counts[entry.status] += 1
     }
-
-    // 排序
-    filtered.sort((a, b) => {
-      const factor = currentFilter.value.sortOrder === 'asc' ? 1 : -1
-      switch (currentFilter.value.sortBy) {
-        case 'rating':
-          return (a.rating - b.rating) * factor
-        case 'releaseDate':
-          return (new Date(a.releaseDate).getTime() - new Date(b.releaseDate).getTime()) * factor
-        case 'title':
-          return a.title.localeCompare(b.title) * factor
-        default:
-          return 0
-      }
-    })
-
-    return filtered
+    return counts
   })
 
-  async function fetchGames() {
-    loading.value = true
-    try {
-      const { data } = await gameApi.getGames({ 
-        page: currentFilter.value.page, 
-        limit: currentFilter.value.pageSize,
-        tags: currentFilter.value.tags,
-        search: currentFilter.value.search
-      })
-      games.value = data.games
-      total.value = data.total
-    } catch (error: any) {
-      ElMessage.error(error.message || '获取游戏列表失败')
-    } finally {
-      loading.value = false
-    }
-  }
+  // 至少 3 部「已评分 / 已玩 / 收藏」作品才算建立口味画像，
+  // 与首页「给 3–5 部喜欢的作品评分」的文案保持一致。
+  const hasProfile = computed(
+    () =>
+      entries.value.filter((work) => {
+        const entry = work.entry
+        if (!entry) return false
+        return (
+          entry.favorite ||
+          entry.status === 'finished' ||
+          entry.status === 'playing' ||
+          (entry.rating ?? 0) > 0
+        )
+      }).length >= 3,
+  )
 
-  async function fetchGameDetail(id: string) {
-    loading.value = true
-    try {
-      const { data } = await gameApi.getGameDetail(id)
-      currentGame.value = data
-    } catch (error: any) {
-      ElMessage.error(error.message || '获取游戏详情失败')
-    } finally {
-      loading.value = false
-    }
-  }
-
-  async function fetchRecommendations() {
-    try {
-      const { data } = await gameApi.getRecommendations()
-      recommendations.value = data
-    } catch (error: any) {
-      console.error('获取推荐失败:', error)
-    }
-  }
-
-  async function rateGame(gameId: string, rating: number) {
-    try {
-      await gameApi.rateGame(gameId, rating)
-      if (currentGame.value && currentGame.value.id.toString() === gameId) {
-        currentGame.value.userRating = rating
+  const tasteTags = computed(() => {
+    const weights = new Map<string, number>()
+    for (const work of entries.value) {
+      const entry = work.entry
+      if (!entry) continue
+      const positive =
+        entry.favorite ||
+        entry.status === 'finished' ||
+        (entry.rating ?? 0) >= 7.5
+      if (!positive) continue
+      const weight = entry.favorite ? 2 : 1
+      for (const tag of work.tags.slice(0, 10)) {
+        weights.set(tag.name, (weights.get(tag.name) ?? 0) + weight)
       }
-      ElMessage.success('评分成功')
-    } catch (error: any) {
-      ElMessage.error(error.message || '评分失败')
+    }
+    return [...weights.entries()]
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 8)
+      .map(([name, count]) => ({ name, count }))
+  })
+
+  function entryFor(workId: number): Entry | null {
+    return entryMap.value.get(workId) ?? null
+  }
+
+  // 兼容旧调用：fetchRecommendations(12) 等价于传 { limit: 12 }；
+  // 新调用可传入与设置一致的参数对象，缺省 limit 时仍按 12 处理。
+  async function fetchRecommendations(params: number | RecommendationParams = 12) {
+    const query: RecommendationParams =
+      typeof params === 'number' ? { limit: params } : { ...params }
+    if (query.limit === undefined) query.limit = 12
+
+    loadingRecommendations.value = true
+    try {
+      const data = await api.recommendations(query)
+      recommendations.value = data.items
+      algorithmVersion.value = data.algorithm_version
+    } catch (error) {
+      ElMessage.error(messageOf(error))
+    } finally {
+      loadingRecommendations.value = false
     }
   }
 
-  function updateFilter(filter: Partial<GameFilter>) {
-    currentFilter.value = {
-      ...currentFilter.value,
-      ...filter,
-      // 当过滤条件改变时，重置页码
-      ...(filter.search || filter.tags ? { page: 1 } : {})
+  async function fetchEntries() {
+    loadingEntries.value = true
+    try {
+      entries.value = (await api.entries()).items
+    } catch (error) {
+      ElMessage.error(messageOf(error))
+    } finally {
+      loadingEntries.value = false
     }
-    fetchGames()
   }
 
-  function clearFilter() {
-    currentFilter.value = {
-      page: 1,
-      pageSize: 12,
-      sortBy: 'rating',
-      sortOrder: 'desc'
+  async function fetchSettings() {
+    try {
+      settings.value = await api.settings()
+    } catch (error) {
+      ElMessage.error(messageOf(error))
     }
-    fetchGames()
+  }
+
+  async function saveSettings(patch: SettingsPatch) {
+    settings.value = await api.saveSettings(patch)
+    return settings.value
+  }
+
+  async function loadStats() {
+    try {
+      const health = await api.health()
+      stats.value = health.stats
+      algorithmVersion.value = health.algorithm
+    } catch {
+      stats.value = null
+    }
+  }
+
+  async function saveEntry(workId: number, data: EntryInput) {
+    const work = await api.saveEntry(workId, data)
+    await fetchEntries()
+    return work
+  }
+
+  async function removeEntry(workId: number) {
+    await api.deleteEntry(workId)
+    await fetchEntries()
+  }
+
+  async function markNotInterested(workId: number) {
+    await api.feedback({ work_id: workId, kind: 'not_interested' })
+    recommendations.value = recommendations.value.filter((work) => work.id !== workId)
   }
 
   return {
-    games,
-    loading,
-    total,
-    currentGame,
     recommendations,
-    currentFilter,
-    filteredGames,
-    fetchGames,
-    fetchGameDetail,
+    entries,
+    settings,
+    stats,
+    algorithmVersion,
+    loadingRecommendations,
+    loadingEntries,
+    entryMap,
+    entryCounts,
+    hasProfile,
+    tasteTags,
+    entryFor,
     fetchRecommendations,
-    rateGame,
-    updateFilter,
-    clearFilter
+    fetchEntries,
+    fetchSettings,
+    saveSettings,
+    loadStats,
+    saveEntry,
+    removeEntry,
+    markNotInterested,
   }
 })
