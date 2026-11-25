@@ -74,7 +74,7 @@ npm run dev
 
 ## 端点总览
 
-共 24 个端点，前端方法一一对应：
+共 26 个端点，前端方法一一对应：
 
 | 方法 | 路径 | 前端 `api` 方法 |
 | --- | --- | --- |
@@ -85,6 +85,8 @@ npm run dev
 | GET | `/api/works/{id}/similar` | `similar(id, limit)` |
 | GET | `/api/tags` | `tags(params)` |
 | GET | `/api/recommendations` | `recommendations(params)` |
+| GET | `/api/taste-quiz` | `tasteQuiz()` |
+| POST | `/api/taste-quiz` | `saveTasteQuiz(answers)` |
 | GET | `/api/me/entries` | `entries()` |
 | PUT | `/api/me/entries/{id}` | `saveEntry(id, data)` |
 | DELETE | `/api/me/entries/{id}` | `deleteEntry(id)` |
@@ -171,9 +173,60 @@ npm run dev
 | `language` | string | — | 语言 |
 | `diversity` | number 0–0.6 | — | 多样性 |
 | `save` | boolean | `true` | 是否落库为推荐批次 |
-| `algorithm` | `auto\|content\|hybrid` | `auto` | 推荐算法（本轮新增） |
+| `algorithm` | `auto\|content\|hybrid` | `auto` | 推荐算法 |
+| `profile_source` | `auto\|library\|quiz\|all` | `auto` | 画像来源（见下） |
 
-响应：`RecommendationResponse` = `{ items: Work[], batch_id: string | null, algorithm_version: string }`。`save=false` 时 `batch_id` 为 `null`。每条 `Work` 可能带 `score`、`reason`、`shared_tags`、`algorithm_version` 等推荐解释字段。
+`profile_source` 决定用哪份口味画像：
+
+| 值 | 含义 |
+| --- | --- |
+| `library` | 只用游戏库记录（`my_entries`）生成的画像 |
+| `quiz` | 只用口味测试画像；未做测试时按高口碑冷启动推荐 |
+| `all` | 合并游戏库画像与问卷画像 |
+| `auto` | `quiz_merge_home` 开启且已有问卷画像时等价于 `all`，否则等价于 `library` |
+
+响应：`RecommendationResponse` = `{ items: Work[], batch_id: string | null, algorithm_version: string, profile_source: string }`。`save=false` 时 `batch_id` 为 `null`。每条 `Work` 可能带 `score`、`reason`、`shared_tags`、`algorithm_version`、`profile_source` 等推荐解释字段。
+
+---
+
+### 口味测试
+
+#### GET `/api/taste-quiz`
+
+返回题库、已保存答案与画像结果：
+
+```json
+{
+  "questions": [
+    {
+      "id": "q_story",
+      "title": "一部作品最吸引你的是什么？",
+      "subtitle": "想想让你熬夜读下去的理由",
+      "options": [
+        {
+          "id": "story_plot",
+          "label": "层层展开的主线剧情",
+          "tags": { "Drama": 1.2, "Mystery": 0.6 },
+          "axes": { "narrative": 1.2 }
+        }
+      ]
+    }
+  ],
+  "answers": {},
+  "result": {
+    "code": "", "labels": [], "tags": {},
+    "year_center": null, "length_center": null, "completed": false
+  }
+}
+```
+
+共 8 题，每题单选。选项里的 `tags` 是库内真实英文标签权重，`axes` 是四轴（叙事 / 氛围 / 节奏 / 结构）方向值。
+
+#### POST `/api/taste-quiz`
+
+请求体：`{ "answers": { "q_story": "story_plot", "...": "..." } }`。非法题目 / 选项 ID 会被忽略，不报错。后端保存答案与画像结果，返回与 GET 相同的结构。
+
+`result` 字段：`code`（四轴短词用「·」连接，如 `剧情向·悬疑·快节奏·多结局`）、`labels`（4 个中文短词）、`tags`（累计标签权重）、`year_center` / `length_center`（年代与时长中心）、`completed`（是否答完所有题）。
 
 ---
 
@@ -205,16 +258,23 @@ npm run dev
 ```json
 {
   "include_nsfw": false,
-  "min_year": 2000,
-  "max_length_minutes": 480,
-  "platform": "Windows",
-  "language": "zh-CN",
-  "diversity": 0.2
+  "min_year": null,
+  "max_length_minutes": null,
+  "platform": null,
+  "language": null,
+  "diversity": 0.15,
+  "quiz_answers": {},
+  "quiz_profile": null,
+  "quiz_merge_home": true
 }
 ```
 
+`quiz_answers` 为已保存的问卷答案，`quiz_profile` 为计算出的画像结果（结构见口味测试），`quiz_merge_home` 控制首页推荐是否并入问卷画像。
+
 #### PUT `/api/settings`
 请求体：`SettingsPatch`（`Settings` 的任意子集）。响应：更新后的 `Settings`。
+
+- `quiz_merge_home: true` → 首页 `auto` 合并游戏库与问卷画像；`false` → 首页只看游戏库，问卷页仍只看问卷。
 
 ---
 
@@ -394,7 +454,9 @@ dump 文件不存在时返回错误（前端拦截器会展示 `detail`）。
 | `VotesStats` | `GET /api/admin/votes/stats` |
 | `VotesImportInput` / `VotesImportResult` | `POST /api/admin/votes/import` |
 | `RecommendationAlgorithm`（`auto\|content\|hybrid`） | `GET /api/recommendations` 的 `algorithm` 参数 |
+| `ProfileSource`（`auto\|library\|quiz\|all`） | `GET /api/recommendations` 的 `profile_source` 参数 |
+| `TasteQuizQuestion` / `TasteQuizOption` / `TasteQuizResult` / `TasteQuizResponse` | `GET` / `POST /api/taste-quiz` |
 
-字段扩展：`WorkQuery` 新增 `platform`、`language`、`min_year`、`max_length_minutes`；`ImportVndbInput` / `ImportBangumiInput` 新增 `incremental`。既有类型名保持不变。
+字段扩展：`WorkQuery` 新增 `platform`、`language`、`min_year`、`max_length_minutes`；`RecommendationQuery` 新增 `profile_source`；`Settings` 新增 `quiz_answers`、`quiz_profile`、`quiz_merge_home`；`ImportVndbInput` / `ImportBangumiInput` 新增 `incremental`。既有类型名保持不变。
 
 接口变更时，请同步更新本文、`src/types/api.ts` 与 `src/api/index.ts`。

@@ -28,6 +28,13 @@
           <el-switch v-model="form.include_nsfw" />
           </el-form-item>
 
+          <el-form-item label="问卷参与推荐">
+            <div class="switch-row">
+              <el-switch v-model="form.quiz_merge_home" />
+              <span class="switch-hint">关闭后首页只看游戏库，问卷页只看问卷</span>
+            </div>
+          </el-form-item>
+
           <el-form-item label="最早年份">
             <el-input-number
               v-model="form.min_year"
@@ -267,6 +274,7 @@ const manual = reactive({
 
 const form = reactive({
   include_nsfw: false,
+  quiz_merge_home: true,
   min_year: undefined as number | undefined,
   max_length_minutes: undefined as number | undefined,
   platform: '',
@@ -276,6 +284,7 @@ const form = reactive({
 
 function applySettings(settings: Settings) {
   form.include_nsfw = settings.include_nsfw
+  form.quiz_merge_home = settings.quiz_merge_home
   form.min_year = settings.min_year ?? undefined
   form.max_length_minutes = settings.max_length_minutes ?? undefined
   form.platform = settings.platform ?? ''
@@ -288,6 +297,7 @@ async function save() {
   try {
     await store.saveSettings({
       include_nsfw: form.include_nsfw,
+      quiz_merge_home: form.quiz_merge_home,
       min_year: form.min_year ?? null,
       max_length_minutes: form.max_length_minutes ?? null,
       platform: form.platform || null,
@@ -522,6 +532,18 @@ onMounted(async () => {
   color: #8a8fa3;
   font-size: 13px;
   line-height: 1.7;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.switch-hint {
+  font-size: 12px;
+  color: #9a9fb0;
 }
 
 .diversity-slider {

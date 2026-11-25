@@ -1005,6 +1005,9 @@ def get_settings(conn: sqlite3.Connection) -> dict[str, Any]:
         "platform": None,
         "language": None,
         "diversity": 0.15,
+        "quiz_answers": {},
+        "quiz_profile": None,
+        "quiz_merge_home": True,
     }
     for row in conn.execute("SELECT key, value FROM settings").fetchall():
         defaults[row["key"]] = json_loads(row["value"], row["value"])

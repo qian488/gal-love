@@ -47,6 +47,11 @@ class SettingsUpdate(BaseModel):
     platform: str | None = None
     language: str | None = None
     diversity: float | None = Field(default=None, ge=0, le=0.6)
+    quiz_merge_home: bool | None = None
+
+
+class TasteQuizSubmit(BaseModel):
+    answers: dict[str, str] = Field(default_factory=dict)
 
 
 class ImportVndbRequest(BaseModel):

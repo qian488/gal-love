@@ -10,6 +10,12 @@ const router = createRouter({
       meta: { title: '推荐' },
     },
     {
+      path: '/taste-quiz',
+      name: 'TasteQuiz',
+      component: () => import('../views/TasteQuiz.vue'),
+      meta: { title: '口味测试' },
+    },
+    {
       path: '/onboarding',
       name: 'Onboarding',
       component: () => import('../views/Onboarding.vue'),

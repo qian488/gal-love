@@ -199,7 +199,12 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
 def connect(db_path: str | Path) -> sqlite3.Connection:
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path), timeout=30)
+    # FastAPI runs sync generator dependencies (get_conn) and sync endpoints in
+    # arbitrary threadpool workers: __enter__, the handler and __exit__ may each
+    # land on a different thread. Each request owns a private connection and the
+    # three steps are sequential, so allowing cross-thread use is safe and avoids
+    # random "SQLite objects created in a thread..." 500s under concurrent load.
+    conn = sqlite3.connect(str(path), timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")

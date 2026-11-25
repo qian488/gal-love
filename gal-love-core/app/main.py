@@ -14,7 +14,14 @@ from .config import settings
 from .db import connect, db_session, init_db
 from .ingest.bangumi import import_bangumi
 from .ingest.vndb import import_vndb
-from .recommend.engine import ALGORITHM_VERSION, algorithm_version, recommend, similar_works
+from .recommend.engine import (
+    ALGORITHM_VERSION,
+    algorithm_version,
+    recommend,
+    resolve_profile_source,
+    similar_works,
+)
+from .recommend.quiz import QUESTIONS, calculate_profile, filter_answers
 from .recommend.votes import get_votes_stats, import_votes_dump
 from .repository import (
     add_feedback,
@@ -44,6 +51,7 @@ from .schemas import (
     MergeWorksRequest,
     RestoreRequest,
     SettingsUpdate,
+    TasteQuizSubmit,
     VotesImportRequest,
 )
 
@@ -58,6 +66,15 @@ def get_conn(request: Request) -> Iterator[sqlite3.Connection]:
         yield conn
     finally:
         conn.close()
+
+
+def _quiz_payload(conn: sqlite3.Connection) -> dict[str, Any]:
+    settings = get_settings(conn)
+    return {
+        "questions": QUESTIONS,
+        "answers": settings.get("quiz_answers") or {},
+        "result": settings.get("quiz_profile") or calculate_profile({}),
+    }
 
 
 def _run_vndb_import(
@@ -181,9 +198,11 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         language: str | None = None,
         diversity: float | None = Query(default=None, ge=0, le=0.6),
         algorithm: str | None = Query(default=None, pattern="^(auto|content|hybrid)$"),
+        profile_source: str | None = Query(default=None, pattern="^(auto|library|quiz|all)$"),
         save: bool = True,
         conn: sqlite3.Connection = Depends(get_conn),
     ) -> dict[str, Any]:
+        source = resolve_profile_source(conn, profile_source)
         items = recommend(
             conn,
             limit=limit,
@@ -194,6 +213,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             language=language,
             diversity=diversity,
             algorithm=algorithm,
+            profile_source=profile_source,
         )
         # 报告本次实际执行的算法版本，而不是“当前可用的最高版本”。
         if items:
@@ -203,7 +223,12 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         else:
             version = algorithm_version(conn)
         batch_id = save_recommendations(conn, items, version) if save else None
-        return {"items": items, "batch_id": batch_id, "algorithm_version": version}
+        return {
+            "items": items,
+            "batch_id": batch_id,
+            "algorithm_version": version,
+            "profile_source": source,
+        }
 
     @app.get("/api/me/entries")
     def entries(conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
@@ -238,6 +263,20 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="work not found")
         add_feedback(conn, payload.work_id, payload.kind, payload.note)
         return {"ok": True}
+
+    @app.get("/api/taste-quiz")
+    def taste_quiz(conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
+        return _quiz_payload(conn)
+
+    @app.post("/api/taste-quiz")
+    def submit_taste_quiz(
+        payload: TasteQuizSubmit,
+        conn: sqlite3.Connection = Depends(get_conn),
+    ) -> dict[str, Any]:
+        answers = filter_answers(payload.answers)
+        result = calculate_profile(answers)
+        set_settings(conn, {"quiz_answers": answers, "quiz_profile": result})
+        return _quiz_payload(conn)
 
     @app.get("/api/settings")
     def read_settings(conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:

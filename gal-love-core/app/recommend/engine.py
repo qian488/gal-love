@@ -13,8 +13,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
-from ..normalize import json_loads
+from ..normalize import json_loads, normalize_text
 from ..repository import get_feedback_work_ids, get_settings, get_work
+from ..tag_zh import canonical_lookup_keys
 from . import cf
 from .votes import has_votes, votes_db_path
 
@@ -165,6 +166,8 @@ class UserProfile:
     year_center: float | None
     length_center: float | None
     has_profile: bool
+    source: str = "library"
+    quiz_labels: list[str] = field(default_factory=list)
 
 
 def _cosine(left: dict[int, float], right: dict[int, float]) -> float:
@@ -247,6 +250,124 @@ def build_profile(conn: sqlite3.Connection, index: FeatureIndex) -> UserProfile:
     )
 
 
+def _profile_source_name(profile_source: str | None, settings: dict[str, Any]) -> str:
+    mode = "auto" if profile_source is None else str(profile_source).strip().casefold()
+    if mode not in {"auto", "library", "quiz", "all"}:
+        raise ValueError(f"unknown profile source: {profile_source!r}")
+    if mode == "auto":
+        quiz = settings.get("quiz_profile")
+        if settings.get("quiz_merge_home", True) and isinstance(quiz, dict) and quiz:
+            return "all"
+        return "library"
+    return mode
+
+
+def resolve_profile_source(conn: sqlite3.Connection, profile_source: str | None = None) -> str:
+    """Return the profile source that a recommendation request would actually use."""
+    return _profile_source_name(profile_source, get_settings(conn))
+
+
+def _tag_name_keys(name: str) -> set[str]:
+    keys = {normalize_text(name)}
+    keys.update(canonical_lookup_keys(name))
+    return {key for key in keys if key}
+
+
+def _center_value(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def build_quiz_profile(conn: sqlite3.Connection, index: FeatureIndex) -> UserProfile:
+    """Turn the stored quiz result into a UserProfile compatible with the engine.
+
+    Quiz tag names are matched against ``index.tag_names`` by normalized name
+    and known aliases, so ``Romance`` also matches a tag stored as ``romance``.
+    A user without a quiz simply gets an empty quiz profile (cold start).
+    """
+    quiz = get_settings(conn).get("quiz_profile")
+    quiz = quiz if isinstance(quiz, dict) else {}
+    labels = [str(label) for label in (quiz.get("labels") or []) if isinstance(label, str)]
+
+    lookup: dict[str, list[int]] = {}
+    for tag_id, name in index.tag_names.items():
+        for key in _tag_name_keys(name):
+            lookup.setdefault(key, []).append(tag_id)
+
+    positive: dict[int, float] = {}
+    for name, raw_weight in (quiz.get("tags") or {}).items():
+        if not isinstance(name, str):
+            continue
+        try:
+            weight = float(raw_weight)
+        except (TypeError, ValueError):
+            continue
+        if weight <= 0:
+            continue
+        matched: list[int] = []
+        for key in _tag_name_keys(name):
+            matched = lookup.get(key, [])
+            if matched:
+                break
+        for tag_id in matched:
+            positive[tag_id] = positive.get(tag_id, 0.0) + weight
+
+    return UserProfile(
+        vector=_normalize(positive),
+        negative_vector={},
+        company_weights={},
+        liked_work_ids=[],
+        disliked_work_ids=set(),
+        year_center=_center_value(quiz.get("year_center")),
+        length_center=_center_value(quiz.get("length_center")),
+        has_profile=bool(positive),
+        source="quiz",
+        quiz_labels=labels,
+    )
+
+
+def _blend_vectors(left: dict[int, float], right: dict[int, float]) -> dict[int, float]:
+    merged: dict[int, float] = {}
+    for vector in (left, right):
+        for key, value in vector.items():
+            merged[key] = merged.get(key, 0.0) + float(value) * 0.5
+    return merged
+
+
+def merge_profiles(library: UserProfile, quiz: UserProfile) -> UserProfile:
+    """Combine library and quiz preferences into a single profile."""
+    liked = dict(library.liked_work_ids)
+    liked.update(dict(quiz.liked_work_ids))
+    centers = [
+        (value, 1.0)
+        for value in (library.year_center, quiz.year_center)
+        if value is not None
+    ]
+    lengths = [
+        (value, 1.0)
+        for value in (library.length_center, quiz.length_center)
+        if value is not None
+    ]
+    vector = _normalize(_blend_vectors(library.vector, quiz.vector))
+    return UserProfile(
+        vector=vector,
+        negative_vector=_normalize(_blend_vectors(library.negative_vector, quiz.negative_vector)),
+        company_weights=_blend_vectors(library.company_weights, quiz.company_weights),
+        liked_work_ids=sorted(liked.items(), key=lambda item: item[1], reverse=True),
+        disliked_work_ids=library.disliked_work_ids | quiz.disliked_work_ids,
+        year_center=_weighted_average(centers),
+        length_center=_weighted_average(lengths),
+        has_profile=bool(vector),
+        source="all",
+        quiz_labels=list(quiz.quiz_labels),
+    )
+
+
 def _quality(feature: WorkFeature) -> float:
     if feature.rating is None:
         return 0.45
@@ -322,6 +443,9 @@ def _reason(
     profile: UserProfile,
     index: FeatureIndex,
 ) -> tuple[str, list[str]]:
+    if profile.source in {"quiz", "all"} and profile.quiz_labels and not profile.liked_work_ids:
+        labels = "".join(f"「{label}」" for label in profile.quiz_labels[:3])
+        return f"符合你的口味测试偏好：{labels}", []
     if profile.has_profile:
         liked_id, tags = _shared_tags(candidate, profile.liked_work_ids, index)
         if liked_id:
@@ -370,6 +494,7 @@ def recommend(
     language: str | None = None,
     diversity: float | None = None,
     algorithm: str | None = None,
+    profile_source: str | None = None,
     votes_db: Path | str | None = None,
 ) -> list[dict[str, Any]]:
     """Recommend works, optionally blending collaborative filtering.
@@ -399,8 +524,15 @@ def recommend(
     use_hybrid = votes_ready and mode in {"auto", "hybrid"}
     version = HYBRID_ALGORITHM_VERSION if use_hybrid else ALGORITHM_VERSION
 
+    source = _profile_source_name(profile_source, settings)
     index = FeatureIndex.build(conn)
-    profile = build_profile(conn, index)
+    library_profile = build_profile(conn, index)
+    if source == "quiz":
+        profile = build_quiz_profile(conn, index)
+    elif source == "all":
+        profile = merge_profiles(library_profile, build_quiz_profile(conn, index))
+    else:
+        profile = library_profile
     entries = _entry_map(conn)
     excluded = set(entries) | get_feedback_work_ids(conn, "not_interested")
     platform_key = platform.casefold() if platform else None
@@ -505,6 +637,7 @@ def recommend(
         work["reason"] = reason
         work["shared_tags"] = tags
         work["algorithm_version"] = version
+        work["profile_source"] = source
         results.append(work)
     return results
 

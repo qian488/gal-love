@@ -18,6 +18,10 @@
             <el-icon><HomeFilled /></el-icon>
             推荐
           </el-menu-item>
+          <el-menu-item index="/taste-quiz">
+            <el-icon><QuestionFilled /></el-icon>
+            口味测试
+          </el-menu-item>
           <el-menu-item index="/explore">
             <el-icon><Compass /></el-icon>
             探索
@@ -44,11 +48,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Collection, Compass, HomeFilled, Setting } from '@element-plus/icons-vue'
+import { Collection, Compass, HomeFilled, QuestionFilled, Setting } from '@element-plus/icons-vue'
 
 const route = useRoute()
 
 const activeMenu = computed(() => {
+  if (route.path.startsWith('/taste-quiz')) return '/taste-quiz'
   if (route.path.startsWith('/explore') || route.path.startsWith('/works')) return '/explore'
   if (route.path.startsWith('/library')) return '/library'
   if (route.path.startsWith('/settings')) return '/settings'
@@ -115,8 +120,15 @@ const activeMenu = computed(() => {
 
 .nav {
   flex: 1;
+  min-width: 0;
+  overflow-x: auto;
   border-bottom: none;
   background: transparent;
+  scrollbar-width: none;
+}
+
+.nav::-webkit-scrollbar {
+  display: none;
 }
 
 .nav :deep(.el-menu-item) {
@@ -142,9 +154,18 @@ const activeMenu = computed(() => {
     gap: 8px;
   }
 
+  .brand {
+    min-width: 0;
+  }
+
+  .brand-name {
+    display: none;
+  }
+
   .nav :deep(.el-menu-item) {
     padding: 0 10px;
     margin: 0;
+    white-space: nowrap;
   }
 
   .nav :deep(.el-icon) {

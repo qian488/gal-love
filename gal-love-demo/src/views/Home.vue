@@ -145,6 +145,12 @@
               挑 3–5 部喜欢的作品
             </el-button>
           </div>
+
+          <div class="quiz-entry">
+            <el-button text type="primary" @click="router.push('/taste-quiz')">
+              做口味测试
+            </el-button>
+          </div>
         </section>
 
       </aside>
@@ -470,6 +476,13 @@ onMounted(async () => {
 .onboarding {
   text-align: center;
   padding: 20px 8px 8px;
+}
+
+.quiz-entry {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(31, 35, 64, 0.06);
+  text-align: center;
 }
 
 @media (max-width: 960px) {

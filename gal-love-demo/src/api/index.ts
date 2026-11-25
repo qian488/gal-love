@@ -21,6 +21,7 @@ import type {
   Stats,
   SyncRunListResponse,
   TagListResponse,
+  TasteQuizResponse,
   VotesImportInput,
   VotesImportResult,
   VotesStats,
@@ -84,6 +85,10 @@ export const api = {
 
   recommendations: (params: RecommendationQuery = {}) =>
     get<RecommendationResponse>('/recommendations', params),
+
+  tasteQuiz: () => get<TasteQuizResponse>('/taste-quiz'),
+  saveTasteQuiz: (answers: Record<string, string>) =>
+    post<TasteQuizResponse>('/taste-quiz', { answers }),
 
   entries: () => get<EntryListResponse>('/me/entries'),
   saveEntry: (workId: number, data: EntryInput) => put<Work>(`/me/entries/${workId}`, data),

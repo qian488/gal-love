@@ -71,6 +71,7 @@ export interface Work {
   reason?: string
   shared_tags?: string[]
   algorithm_version?: string
+  profile_source?: ProfileSource
 }
 
 export interface WorkListResponse {
@@ -80,10 +81,44 @@ export interface WorkListResponse {
   limit: number
 }
 
+export type ProfileSource = 'auto' | 'library' | 'quiz' | 'all'
+
+export interface TasteQuizOption {
+  id: string
+  label: string
+  tags?: Record<string, number>
+  axes?: Record<string, number>
+  year?: number
+  length?: number
+}
+
+export interface TasteQuizQuestion {
+  id: string
+  title: string
+  subtitle?: string
+  options: TasteQuizOption[]
+}
+
+export interface TasteQuizResult {
+  code: string
+  labels: string[]
+  tags: Record<string, number>
+  year_center: number | null
+  length_center: number | null
+  completed: boolean
+}
+
+export interface TasteQuizResponse {
+  questions: TasteQuizQuestion[]
+  answers: Record<string, string>
+  result: TasteQuizResult
+}
+
 export interface RecommendationResponse {
   items: Work[]
   batch_id: string | null
   algorithm_version: string
+  profile_source: ProfileSource
 }
 
 export interface TagInfo {
@@ -125,6 +160,7 @@ export interface Settings {
   platform: string | null
   language: string | null
   diversity: number
+  quiz_merge_home: boolean
 }
 
 export type SettingsPatch = Partial<Settings>
@@ -173,6 +209,7 @@ export interface RecommendationQuery {
   diversity?: number
   save?: boolean
   algorithm?: RecommendationAlgorithm
+  profile_source?: ProfileSource
 }
 
 export interface SyncRun {

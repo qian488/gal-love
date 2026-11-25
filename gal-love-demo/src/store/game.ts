@@ -23,6 +23,7 @@ const defaultSettings: Settings = {
   platform: null,
   language: null,
   diversity: 0.15,
+  quiz_merge_home: true,
 }
 
 function messageOf(error: unknown): string {

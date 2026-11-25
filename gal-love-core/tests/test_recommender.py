@@ -17,7 +17,7 @@ from app.recommend.votes import (
     import_votes_dump,
     votes_db_path,
 )
-from app.repository import add_feedback, upsert_entry
+from app.repository import add_feedback, set_settings, upsert_entry
 from scripts.evaluate import evaluate, ndcg_at_k, recall_at_k
 
 from .helpers import add_work
@@ -314,3 +314,98 @@ def test_evaluate_insufficient_ratings(conn):
     summary = evaluate(conn)
     assert summary["evaluated"] is False
     assert "不足 6 条" in summary["message"]
+
+
+# --- 口味问答画像与多画像推荐 ------------------------------------------------
+
+
+def _seed_quiz_preferences(conn):
+    liked = add_work(
+        conn, title="Library Favorite", tags=["romance", "school"], rating=9.0,
+        companies=["Studio A"],
+    )
+    library_match = add_work(
+        conn, title="Romance Candidate", tags=["romance", "school"], rating=7.2,
+        companies=["Studio A"],
+    )
+    quiz_match = add_work(
+        conn, title="Mystery Candidate", tags=["mystery", "thriller"], rating=7.0,
+        companies=["Studio Z"],
+    )
+    upsert_entry(conn, liked, {"status": "finished", "rating": 9.0})
+    set_settings(
+        conn,
+        {
+            "quiz_profile": {
+                "code": "剧情向·悬疑·慢热·多结局",
+                "labels": ["剧情向", "悬疑", "慢热", "多结局"],
+                "tags": {"Mystery": 2.0, "Thriller": 1.0},
+                "year_center": None,
+                "length_center": None,
+                "completed": True,
+            }
+        },
+    )
+    return library_match, quiz_match
+
+
+def test_quiz_source_prefers_quiz_tags_and_explains_with_labels(conn):
+    library_match, quiz_match = _seed_quiz_preferences(conn)
+
+    items = recommend(conn, limit=10, profile_source="quiz")
+    ids = [item["id"] for item in items]
+
+    assert items
+    assert quiz_match in ids
+    assert ids.index(quiz_match) < ids.index(library_match)
+    assert all(item["profile_source"] == "quiz" for item in items)
+    assert "符合你的口味测试偏好：「剧情向」「悬疑」" in items[0]["reason"]
+
+
+def test_library_source_ignores_quiz_profile(conn):
+    library_match, quiz_match = _seed_quiz_preferences(conn)
+
+    items = recommend(conn, limit=10, profile_source="library")
+    ids = [item["id"] for item in items]
+
+    assert ids.index(library_match) < ids.index(quiz_match)
+    assert all(item["profile_source"] == "library" for item in items)
+    assert "因为你喜欢《Library Favorite》" in next(
+        item["reason"] for item in items if item["id"] == library_match
+    )
+
+
+def test_auto_uses_all_for_quiz_and_library_when_merge_enabled(conn):
+    _seed_quiz_preferences(conn)
+
+    items = recommend(conn, limit=10)
+    assert items
+    assert all(item["profile_source"] == "all" for item in items)
+
+
+def test_auto_falls_back_to_library_when_quiz_merge_disabled(conn):
+    library_match, quiz_match = _seed_quiz_preferences(conn)
+    set_settings(conn, {"quiz_merge_home": False})
+
+    from app.recommend.engine import resolve_profile_source
+
+    assert resolve_profile_source(conn) == "library"
+    items = recommend(conn, limit=10)
+    assert all(item["profile_source"] == "library" for item in items)
+    ids = [item["id"] for item in items]
+    assert ids.index(library_match) < ids.index(quiz_match)
+
+
+def test_quiz_source_without_quiz_uses_cold_start_quality(conn):
+    high = add_work(conn, title="High Quality", tags=["drama"], rating=9.2)
+    low = add_work(conn, title="Low Quality", tags=["drama"], rating=6.0)
+
+    items = recommend(conn, limit=10, profile_source="quiz")
+    assert [item["id"] for item in items] == [high, low]
+    assert all(item["profile_source"] == "quiz" for item in items)
+    assert "高口碑" in items[0]["reason"]
+
+
+def test_invalid_profile_source_raises_value_error(conn):
+    with pytest.raises(ValueError):
+        recommend(conn, profile_source="bogus")

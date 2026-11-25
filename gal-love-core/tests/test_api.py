@@ -196,6 +196,77 @@ def test_tags_include_zh_and_aliases(client: TestClient):
     assert isinstance(tag["aliases"], list)
 
 
+def test_taste_quiz_get_and_post(client: TestClient):
+    initial = client.get("/api/taste-quiz")
+    assert initial.status_code == 200, initial.text
+    payload = initial.json()
+    assert len(payload["questions"]) == 8
+    assert payload["answers"] == {}
+    assert payload["result"]["completed"] is False
+    assert len(payload["result"]["labels"]) == 4
+
+    response = client.post(
+        "/api/taste-quiz",
+        json={
+            "answers": {
+                "q_story": "story_plot",
+                "q_ending": "end_branch",
+                "q_atmosphere": "not_an_option",
+                "unknown_question": "story_plot",
+            }
+        },
+    )
+    assert response.status_code == 200, response.text
+    saved = response.json()
+    assert saved["answers"] == {"q_story": "story_plot", "q_ending": "end_branch"}
+    assert saved["result"]["tags"]["Drama"] == 1.2
+    assert "多结局" in saved["result"]["labels"]
+    assert saved["result"]["completed"] is False
+
+    reloaded = client.get("/api/taste-quiz").json()
+    assert reloaded["answers"] == saved["answers"]
+    assert reloaded["result"] == saved["result"]
+    settings = client.get("/api/settings").json()
+    assert settings["quiz_answers"] == saved["answers"]
+    assert settings["quiz_profile"] == saved["result"]
+    assert settings["quiz_merge_home"] is True
+
+    # 非法请求体不能变成 500。
+    assert client.post("/api/taste-quiz", json={"answers": []}).status_code == 422
+    assert (
+        client.post("/api/taste-quiz", json={"answers": {"q_story": 123}}).status_code == 422
+    )
+
+
+def test_profile_source_query_validation_and_passthrough(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    assert (
+        client.get("/api/recommendations", params={"profile_source": "bogus"}).status_code == 422
+    )
+    assert (
+        client.get("/api/recommendations", params={"profile_source": "all"}).status_code == 200
+    )
+
+    _create_work(client, title="Profile Source Work")
+    captured: dict = {}
+    original = main.recommend
+
+    def spy(conn, **kwargs):
+        captured.update(kwargs)
+        return original(conn, **kwargs)
+
+    monkeypatch.setattr(main, "recommend", spy)
+    response = client.get(
+        "/api/recommendations", params={"profile_source": "quiz", "save": False}
+    )
+    assert response.status_code == 200, response.text
+    assert captured["profile_source"] == "quiz"
+    data = response.json()
+    assert data["profile_source"] == "quiz"
+    assert all(item["profile_source"] == "quiz" for item in data["items"])
+
+
 def test_algorithm_query_validation_and_passthrough(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ):
