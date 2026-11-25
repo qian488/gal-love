@@ -4,7 +4,7 @@
       <header class="topbar">
         <div class="brand">
           <span class="brand-mark">G</span>
-          <span>Gal Love</span>
+          <span>代号G</span>
         </div>
         <el-button text type="primary" @click="skip">跳过引导</el-button>
       </header>
@@ -16,7 +16,7 @@
         </div>
         <el-progress :percentage="progress" :stroke-width="8" :show-text="false" />
         <h1>{{ stepMeta[step].title }}</h1>
-        <p>{{ stepMeta[step].desc }}</p>
+        <p v-if="stepMeta[step].desc">{{ stepMeta[step].desc }}</p>
       </div>
 
       <!-- 第 1 步：欢迎 -->
@@ -44,6 +44,13 @@
 
       <!-- 第 2 步：挑选作品 -->
       <section v-else-if="step === 1" class="step-panel select">
+        <div class="pick-toolbar">
+          <span class="pick-tip">选 {{ minPicks }}–{{ maxPicks }} 部你喜欢的</span>
+          <el-button text size="small" :loading="loadingWorks" @click="loadCandidates()">
+            换一批 <el-icon><Refresh /></el-icon>
+          </el-button>
+        </div>
+
         <div v-loading="loadingWorks" class="work-grid">
           <div
             v-for="work in candidates"
@@ -124,6 +131,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Refresh } from '@element-plus/icons-vue'
 import { api } from '../api'
 import type { Work } from '../types/api'
 
@@ -134,18 +142,18 @@ const maxPicks = 5
 const stepMeta = [
   {
     label: '欢迎',
-    title: '欢迎来到 Gal Love',
-    desc: '花一分钟告诉我们你喜欢什么，让推荐从「高口碑」变成「像你喜欢的」。',
+    title: '欢迎来到代号G',
+    desc: '',
   },
   {
     label: '挑选作品',
     title: '选出你喜欢的作品',
-    desc: `从下面挑 ${minPicks}–${maxPicks} 部你喜欢的作品，我们会记为已玩、高分并收藏。`,
+    desc: '',
   },
   {
     label: '完成',
     title: '口味画像已建立',
-    desc: '推荐会立刻参考你的偏好，越用越懂你。',
+    desc: '',
   },
 ]
 
@@ -216,7 +224,7 @@ function metaText(work: Work): string {
 async function loadCandidates() {
   loadingWorks.value = true
   try {
-    const data = await api.works({ sort: 'random', limit: 12, include_nsfw: false })
+    const data = await api.works({ sort: 'random', limit: 30, include_nsfw: false })
     candidates.value = data.items
   } catch (error) {
     candidates.value = []
@@ -438,6 +446,18 @@ onBeforeUnmount(() => {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
+}
+
+.pick-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.pick-tip {
+  font-size: 13px;
+  color: #7f7996;
 }
 
 .work-grid {

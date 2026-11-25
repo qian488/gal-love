@@ -1,4 +1,4 @@
-# Gal Love Demo — API 契约说明
+# 代号G 前端 — API 契约说明
 
 本文档描述 `gal-love-demo`（Vue 3 + TypeScript + Vite 前端）与 `gal-love-core`（FastAPI + SQLite 后端）之间**当前真实生效**的接口契约。
 

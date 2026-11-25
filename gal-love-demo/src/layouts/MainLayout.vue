@@ -3,11 +3,8 @@
     <header class="topbar">
       <div class="topbar-inner">
         <router-link to="/" class="brand">
-          <span class="brand-mark">GL</span>
-          <span class="brand-copy">
-            <strong>Gal Love</strong>
-            <small>个人视觉小说推荐</small>
-          </span>
+          <span class="brand-mark">G</span>
+          <span class="brand-name">代号G</span>
         </router-link>
 
         <el-menu
@@ -35,28 +32,12 @@
           </el-menu-item>
         </el-menu>
 
-        <div class="topbar-side">
-          <el-tag size="small" round effect="plain">本地自用</el-tag>
-          <el-link
-            href="http://localhost:8000/docs"
-            target="_blank"
-            :underline="false"
-            class="docs-link"
-          >
-            API
-          </el-link>
-        </div>
       </div>
     </header>
 
     <main class="app-main">
       <slot />
     </main>
-
-    <footer class="app-footer">
-      <span>Gal Love · 个人向视觉小说 / AVG 推荐系统</span>
-      <span>数据来自 VNDB / Bangumi · 仅用于个人学习与自用</span>
-    </footer>
   </div>
 </template>
 
@@ -105,14 +86,21 @@ const activeMenu = computed(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: 180px;
+  min-width: 120px;
   color: inherit;
   text-decoration: none;
 }
 
+.brand-name {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #2f274a;
+}
+
 .brand-mark {
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   border-radius: 12px;
   background: linear-gradient(135deg, #6f57d9, #b06ab3);
   color: #fff;
@@ -120,24 +108,9 @@ const activeMenu = computed(() => {
   align-items: center;
   justify-content: center;
   font-weight: 800;
-  font-size: 14px;
+  font-size: 16px;
   letter-spacing: 0.02em;
   box-shadow: 0 8px 20px rgba(111, 87, 217, 0.3);
-}
-
-.brand-copy {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.2;
-}
-
-.brand-copy strong {
-  font-size: 17px;
-}
-
-.brand-copy small {
-  color: #9a9fb0;
-  font-size: 11px;
 }
 
 .nav {
@@ -159,47 +132,14 @@ const activeMenu = computed(() => {
   font-weight: 600;
 }
 
-.topbar-side {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.docs-link {
-  font-size: 13px;
-  color: #8a8fa3;
-}
-
 .app-main {
   flex: 1;
 }
 
-.app-footer {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  max-width: 1220px;
-  width: 100%;
-  margin: 0 auto;
-  padding: 24px;
-  color: #9a9fb0;
-  font-size: 12px;
-  border-top: 1px solid rgba(31, 35, 64, 0.06);
-}
-
 @media (max-width: 860px) {
-  .brand-copy small,
-  .topbar-side {
-    display: none;
-  }
-
   .topbar-inner {
     padding: 0 12px;
     gap: 8px;
-  }
-
-  .brand {
-    min-width: auto;
   }
 
   .nav :deep(.el-menu-item) {
@@ -209,17 +149,6 @@ const activeMenu = computed(() => {
 
   .nav :deep(.el-icon) {
     margin-right: 2px;
-  }
-}
-
-@media (max-width: 620px) {
-  .brand-copy {
-    display: none;
-  }
-
-  .app-footer {
-    flex-direction: column;
-    padding: 18px 16px;
   }
 }
 </style>

@@ -1,6 +1,6 @@
-# Gal Love Demo
+# 代号G · 前端
 
-个人向视觉小说 / Galgame 推荐系统的 **Web 前端**。配合 [`gal-love-core`](../gal-love-core)（FastAPI + SQLite）使用：后端负责抓取、清洗、推荐与数据治理，本仓库负责浏览、筛选、推荐展示、我的清单与反馈等交互。
+个人向视觉小说 / AVG 推荐系统「代号G」的 **Web 前端**。配合 [`gal-love-core`](../gal-love-core)（FastAPI + SQLite）使用：后端负责抓取、清洗、推荐与数据治理，本仓库负责浏览、筛选、推荐展示、我的清单与反馈等交互。
 
 **单用户本地工具**：没有注册、登录、鉴权或多用户概念，打开即可使用。数据全部存在本地 SQLite 数据库中。
 
@@ -39,7 +39,7 @@ npm install
 npm run dev
 ```
 
-浏览器打开终端提示的地址（通常为 `http://127.0.0.1:5174`，被占用时 Vite 顺延；后端 CORS 同时放行 5173/5174）。
+浏览器打开 `http://127.0.0.1:5174`（`vite.config.ts` 中固定为该端口；后端 CORS 同时放行 5173/5174）。
 
 其他命令：
 
@@ -66,7 +66,9 @@ npm run preview   # 预览生产构建
 | `gal-love-core/` | **当前实际后端**：FastAPI 应用、SQLite 仓储、推荐引擎、导入脚本与测试。前端只对接这里的 `/api`。 |
 | `gal-love-demo/` | **本前端项目**。 |
 | `gal-love-backend/` | 早期留下的 Java 后端骨架与对接指南，当前前端**未对接**，其文档中的注册登录 / JWT / `code,message,data` 约定均已废弃。 |
-| `PLAN.md`、`readme.md`、`index.html` | 项目级说明与占位文件。 |
+| `PLAN.md` | 产品计划、技术决策与实施进度。 |
+| `readme.md` | 「代号G」项目总览与快速开始。 |
+| `index.html` | 早期占位文件，无实际用途。 |
 
 `gal-love-demo/` 内部：
 
@@ -76,12 +78,12 @@ gal-love-demo/
 ├── src/
 │   ├── api/index.ts        axios 实例、错误拦截器、全部 API 调用方法
 │   ├── types/api.ts        请求/响应 TypeScript 类型定义
-│   ├── components/         可复用组件（WorkCard、EntryDialog 等）
+│   ├── components/         可复用组件（WorkCard、CoverImage、EntryDialog、备份/合并/投票面板等）
 │   ├── layouts/            主布局 MainLayout
 │   ├── router/             路由配置
 │   ├── store/              Pinia 状态（game）
-│   ├── views/              页面：Home、Explore、Library、WorkDetail、Settings、404
-│   ├── styles/             全局样式（style.css）
+│   ├── views/              页面：Home、Explore、Library、WorkDetail、Settings、Onboarding、404
+│   ├── style.css           全局样式
 │   ├── App.vue / main.ts   应用入口
 │   └── types/              其他声明文件（路由元信息、Vue shims 等）
 ├── vite.config.ts          Vite 配置（端口、/api 代理）

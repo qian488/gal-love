@@ -5,8 +5,7 @@
         <div class="intro-bar-inner">
           <el-icon class="intro-icon"><MagicStick /></el-icon>
           <span class="intro-text">
-            <strong>第一次来？</strong>
-            挑 3–5 部喜欢的作品，让推荐从「热门」变成「像你喜欢的」。
+            <strong>挑 3–5 部喜欢的作品</strong>，开始获得推荐
           </span>
           <div class="intro-actions">
             <el-button type="primary" size="small" round @click="router.push('/onboarding')">
@@ -21,9 +20,7 @@
     <section class="hero">
       <div class="hero-inner">
         <div class="hero-copy">
-          <span class="eyebrow">PERSONAL VISUAL NOVEL RECOMMENDER</span>
           <h1>下一部，玩什么？</h1>
-          <p>记住你的口味，从视觉小说里挑出下一部值得玩的。</p>
           <div class="search-row">
             <el-input
               v-model="search"
@@ -38,21 +35,6 @@
             </el-input>
             <el-button size="large" type="primary" @click="openSearch">去探索</el-button>
           </div>
-          <div class="hero-stats">
-            <span><strong>{{ store.stats?.works ?? '—' }}</strong> 部作品</span>
-            <span><strong>{{ store.stats?.tags ?? '—' }}</strong> 个标签</span>
-            <span><strong>{{ counts.finished }}</strong> 部玩过</span>
-          </div>
-        </div>
-
-        <div class="hero-art" aria-hidden="true">
-          <div class="orb orb-a" />
-          <div class="orb orb-b" />
-          <div class="glass-card">
-            <span class="glass-label">今日推荐</span>
-            <p>{{ store.recommendations[0]?.title ?? '等待你的口味画像' }}</p>
-            <small>{{ store.recommendations[0]?.reason ?? '记录几部喜欢的作品后，这里会出现推荐理由' }}</small>
-          </div>
         </div>
       </div>
     </section>
@@ -60,12 +42,7 @@
     <section class="layout">
       <main class="main-column">
         <div class="section-head">
-          <div>
-            <h2>为你推荐</h2>
-            <p v-if="store.hasProfile">基于你的游戏库与反馈实时计算，越用越准。</p>
-            <p v-else>还没有口味画像，完成引导并记录至少 3 部作品即可获得推荐。</p>
-          </div>
-          <el-tag effect="plain" round>{{ store.algorithmVersion }}</el-tag>
+          <h2>为你推荐</h2>
         </div>
 
         <div v-loading="store.loadingRecommendations" class="recommendation-list">
@@ -97,7 +74,7 @@
 
         <el-empty
           v-if="!store.loadingRecommendations && !store.recommendations.length"
-          description="挑几部喜欢的作品，推荐会更懂你"
+          description="还没有可推荐的作品"
         >
           <el-button type="primary" @click="router.push('/onboarding')">
             开始冷启动引导
@@ -106,20 +83,15 @@
         </el-empty>
 
         <div class="section-head secondary">
-          <div>
-            <h2>继续探索</h2>
-            <p>按评分、人气或发售时间浏览。</p>
-          </div>
+          <h2>继续探索</h2>
           <el-button text type="primary" @click="router.push('/explore')">
             全部作品 <el-icon><ArrowRight /></el-icon>
           </el-button>
         </div>
 
         <div class="explore-strip">
-          <div v-for="(tip, index) in tips" :key="tip.title" class="tip-card">
-            <span class="tip-index">0{{ index + 1 }}</span>
+          <div v-for="tip in tips" :key="tip.title" class="tip-card">
             <h3>{{ tip.title }}</h3>
-            <p>{{ tip.description }}</p>
             <el-button text type="primary" @click="router.push(tip.to)">
               {{ tip.action }} <el-icon><ArrowRight /></el-icon>
             </el-button>
@@ -164,18 +136,13 @@
               >
                 {{ tag.name }}
               </el-tag>
-              <span v-if="!store.tasteTags.length" class="muted">
-                给作品打高分后，这里会总结你的偏好。
-              </span>
+              <span v-if="!store.tasteTags.length" class="muted">暂无</span>
             </div>
           </template>
 
           <div v-else class="onboarding">
-            <el-icon><MagicStick /></el-icon>
-            <h3>建立你的口味画像</h3>
-            <p>挑 3–5 部喜欢的作品，让推荐更懂你。</p>
             <el-button type="primary" round @click="router.push('/onboarding')">
-              开始引导
+              挑 3–5 部喜欢的作品
             </el-button>
           </div>
         </section>
@@ -243,24 +210,9 @@ function recommendationParams(): RecommendationParams {
 }
 
 const tips = [
-  {
-    title: '从口碑开始',
-    description: '按 VNDB 评分和投票数浏览，快速认识经典作品。',
-    action: '浏览高分作品',
-    to: '/explore?sort=rating',
-  },
-  {
-    title: '按标签找',
-    description: '悬疑、恋爱、科幻、治愈……用标签缩小范围。',
-    action: '按标签筛选',
-    to: '/explore',
-  },
-  {
-    title: '维护口味',
-    description: '在设置里调整 NSFW、年代、时长与多样性。',
-    action: '打开设置',
-    to: '/settings',
-  },
+  { title: '高分作品', action: '去看看', to: '/explore?sort=rating' },
+  { title: '按标签找', action: '去看看', to: '/explore' },
+  { title: '推荐设置', action: '去看看', to: '/settings' },
 ]
 
 function openSearch() {
@@ -363,118 +315,28 @@ onMounted(async () => {
 }
 
 .hero {
-  background:
-    radial-gradient(circle at 15% 20%, rgba(137, 110, 255, 0.4), transparent 45%),
-    radial-gradient(circle at 85% 10%, rgba(255, 150, 200, 0.35), transparent 40%),
-    linear-gradient(135deg, #211b3c 0%, #35285f 55%, #4a2d63 100%);
+  background: linear-gradient(135deg, #241d44 0%, #3a2a63 100%);
   color: #fff;
-  border-radius: 0 0 32px 32px;
+  border-radius: 0 0 24px 24px;
 }
 
 .hero-inner {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 64px 28px 72px;
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
-  gap: 40px;
-  align-items: center;
-}
-
-.eyebrow {
-  font-size: 12px;
-  letter-spacing: 0.18em;
-  color: rgba(255, 255, 255, 0.62);
+  padding: 44px 28px 48px;
 }
 
 .hero h1 {
-  margin: 14px 0 16px;
-  font-size: clamp(36px, 5vw, 56px);
+  margin: 0 0 24px;
+  font-size: clamp(32px, 4.5vw, 48px);
   line-height: 1.12;
   letter-spacing: -0.02em;
-}
-
-.hero-copy > p {
-  max-width: 560px;
-  margin: 0 0 28px;
-  color: rgba(255, 255, 255, 0.76);
-  line-height: 1.9;
 }
 
 .search-row {
   display: flex;
   gap: 10px;
-  max-width: 540px;
-}
-
-.hero-stats {
-  display: flex;
-  gap: 26px;
-  margin-top: 26px;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.65);
-}
-
-.hero-stats strong {
-  color: #fff;
-  font-size: 16px;
-  margin-right: 4px;
-}
-
-.hero-art {
-  position: relative;
-  min-height: 280px;
-}
-
-.orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(2px);
-}
-
-.orb-a {
-  width: 190px;
-  height: 190px;
-  top: 0;
-  right: 30px;
-  background: linear-gradient(135deg, rgba(255, 190, 225, 0.65), rgba(160, 120, 255, 0.15));
-}
-
-.orb-b {
-  width: 120px;
-  height: 120px;
-  bottom: 12px;
-  left: 10px;
-  background: linear-gradient(135deg, rgba(140, 210, 255, 0.5), rgba(120, 90, 255, 0.1));
-}
-
-.glass-card {
-  position: relative;
-  margin-top: 64px;
-  padding: 22px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(18px);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.2);
-}
-
-.glass-label {
-  font-size: 11px;
-  letter-spacing: 0.16em;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.glass-card p {
-  margin: 10px 0 8px;
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.glass-card small {
-  color: rgba(255, 255, 255, 0.68);
-  line-height: 1.7;
-  display: block;
+  max-width: 620px;
 }
 
 .layout {
@@ -503,12 +365,6 @@ onMounted(async () => {
 .panel h2 {
   margin: 0 0 6px;
   font-size: 22px;
-}
-
-.section-head p {
-  margin: 0;
-  color: #8a8fa3;
-  font-size: 13px;
 }
 
 .recommendation-list {
@@ -542,22 +398,9 @@ onMounted(async () => {
   border: 1px solid rgba(31, 35, 64, 0.06);
 }
 
-.tip-index {
-  font-size: 12px;
-  color: #b3a7e6;
-  letter-spacing: 0.1em;
-}
-
 .tip-card h3 {
-  margin: 8px 0;
+  margin: 0 0 10px;
   font-size: 16px;
-}
-
-.tip-card p {
-  margin: 0 0 8px;
-  font-size: 13px;
-  line-height: 1.7;
-  color: #7d8296;
 }
 
 .side-column {
@@ -627,33 +470,11 @@ onMounted(async () => {
 .onboarding {
   text-align: center;
   padding: 20px 8px 8px;
-  color: #6f678e;
-}
-
-.onboarding .el-icon {
-  font-size: 30px;
-  color: #8a6cff;
-}
-
-.onboarding h3 {
-  margin: 10px 0 8px;
-  color: #2f2a44;
-}
-
-.onboarding p {
-  font-size: 13px;
-  line-height: 1.75;
-  margin: 0 0 16px;
 }
 
 @media (max-width: 960px) {
-  .hero-inner,
   .layout {
     grid-template-columns: 1fr;
-  }
-
-  .hero-art {
-    display: none;
   }
 
   .side-column {
