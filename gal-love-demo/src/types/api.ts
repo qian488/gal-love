@@ -81,7 +81,122 @@ export interface WorkListResponse {
   limit: number
 }
 
-export type ProfileSource = 'auto' | 'library' | 'quiz' | 'all'
+export type ProfileSource =
+  | 'auto'
+  | 'library'
+  | 'quiz'
+  | 'pairwise'
+  | 'motivation'
+  | 'enneagram'
+  | 'bigfive'
+  | 'zodiac'
+  | 'all'
+
+/** 画像体系的交互形态：问卷、生日输入、作品对比、抽牌。 */
+export type PersonaKind = 'questionnaire' | 'birthday' | 'pairwise' | 'draw'
+/** 前端分组：快速 / 玩法 / 趣味 / 认真。 */
+export type PersonaGroup = 'quick' | 'play' | 'fun' | 'serious' | 'other'
+
+export interface PersonaOption {
+  id: string
+  label: string
+  tags?: Record<string, number>
+  axes?: Record<string, number>
+  year?: number
+  length?: number
+}
+
+export interface PersonaQuestion {
+  id: string
+  title: string
+  subtitle?: string
+  options: PersonaOption[]
+}
+
+/** 各体系共用的画像结果；额外维度（如大五分数）放在 index 签名里。 */
+export interface PersonaResult {
+  code: string
+  labels: string[]
+  tags: Record<string, number>
+  year_center: number | null
+  length_center: number | null
+  completed: boolean
+  [key: string]: unknown
+}
+
+export interface PersonaProviderInfo {
+  key: string
+  title: string
+  subtitle: string
+  kind: PersonaKind
+  group: PersonaGroup
+  estimated_minutes: number
+  question_count: number
+  completed: boolean
+  code?: string | null
+  labels: string[]
+  notice?: string | null
+}
+
+export interface PersonaProviderListResponse {
+  items: PersonaProviderInfo[]
+  sources: ProfileSource[]
+}
+
+export interface PersonaDetailResponse {
+  key: string
+  title: string
+  subtitle: string
+  kind: PersonaKind
+  group: PersonaGroup
+  estimated_minutes: number
+  question_count: number
+  notice?: string | null
+  questions: PersonaQuestion[]
+  answers: Record<string, string>
+  result: PersonaResult
+  updated_at?: string | null
+  extra?: Record<string, unknown> | null
+}
+
+export interface PairwisePair {
+  left: Work
+  right: Work
+}
+
+export interface PairwiseNextResponse {
+  pairs: PairwisePair[]
+}
+
+export interface PairwiseAnswerInput {
+  winner_id: number
+  loser_id: number
+  skipped?: boolean
+}
+
+export interface PairwiseAnswerResponse {
+  result: PersonaResult
+  payload: PersonaDetailResponse
+}
+
+export interface TarotCard {
+  id: string
+  name: string
+  name_zh: string
+  position: string
+  reversed: boolean
+  themes: string[]
+  tags?: Record<string, number>
+  meaning?: string
+}
+
+export interface TarotDrawResponse {
+  cards: TarotCard[]
+  result: PersonaResult
+  items: Work[]
+  spread: number
+  seed: string
+}
 
 export interface TasteQuizOption {
   id: string
@@ -161,6 +276,9 @@ export interface Settings {
   language: string | null
   diversity: number
   quiz_merge_home: boolean
+  /** null 表示「所有已完成的画像都参与」，数组则只合并列出的来源。 */
+  home_profile_sources?: string[] | null
+  persona_profiles?: Record<string, unknown>
 }
 
 export type SettingsPatch = Partial<Settings>

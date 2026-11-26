@@ -147,7 +147,7 @@
           </div>
 
           <div class="quiz-entry">
-            <el-button text type="primary" @click="router.push('/taste-quiz')">
+            <el-button text type="primary" @click="router.push('/persona')">
               做口味测试
             </el-button>
           </div>

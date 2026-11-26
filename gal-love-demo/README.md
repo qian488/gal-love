@@ -82,7 +82,7 @@ gal-love-demo/
 │   ├── layouts/            主布局 MainLayout
 │   ├── router/             路由配置
 │   ├── store/              Pinia 状态（game）
-│   ├── views/              页面：Home、Explore、Library、WorkDetail、Settings、Onboarding、404
+│   ├── views/              页面：Home、Explore、Library、WorkDetail、Settings、Onboarding、PersonaHub、PersonaQuiz、PairwiseTest、TarotDraw、404
 │   ├── style.css           全局样式
 │   ├── App.vue / main.ts   应用入口
 │   └── types/              其他声明文件（路由元信息、Vue shims 等）

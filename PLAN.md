@@ -292,7 +292,7 @@ GET    /api/admin/sync-runs       同步记录
 - [x] MMR 多样性
 - [x] 推荐理由
 - [x] 不感兴趣反馈
-- [x] 前端接入新 API（当前 26 个端点，已替换旧 mock 契约）
+- [x] 前端接入新 API（当时 26 个端点，现为 29 路径 / 33 操作）
 - [x] 冷启动引导页体验优化（独立 `/onboarding` 三步流程，≥3 部才算建立画像）
 
 ### Phase 3：协同过滤与混合排序（完成）
@@ -319,6 +319,16 @@ GET    /api/admin/sync-runs       同步记录
 - [x] 设置开关 `quiz_merge_home`：开启时首页合并两种画像，关闭时首页只看游戏库
 - [x] 前端 `/taste-quiz` 分步作答、结果页与「按这份问卷推荐」独立列表，「推荐」后新增菜单入口
 - [x] 修复 `connect()` 跨线程限制导致的随机 500（`check_same_thread=False` + 回归测试），36 并发请求全部 200
+
+### Phase 6：多画像体系（完成）
+
+- [x] 画像提供者注册表：`app/recommend/persona_*.py` 自动发现，统一 `calculate()` 契约与标签向量构建，单个模块出错或缺失时自动跳过
+- [x] 新增 5 套画像：玩家动机（24 题 / 8 维）、九型人格（18 题 / 9 型 + 侧翼）、大五人格（10 题 / OCEAN）、十二星座（生日）、作品二选一（10 轮）
+- [x] 塔罗一抽：78 张牌、1 或 3 张牌阵、按日期种子稳定，只产出一次性推荐、不写入画像
+- [x] `profile_source` 扩展到 `pairwise|motivation|enneagram|bigfive|zodiac|tarot`；`all` 按权重合并（library 0.45、pairwise 0.30、各问卷 0.15、zodiac 0.05，未答完 ×0.6）
+- [x] 设置新增 `home_profile_sources` 细粒度选择，`quiz_merge_home` 保留为首页综合画像总开关
+- [x] 前端 `/persona` 体系入口、`/persona/:key` 通用问卷与结果页、`/persona/pairwise`、`/persona/tarot`；旧 `/taste-quiz` 重定向到 `/persona/quiz`
+- [x] 后端 191 项测试通过，前端 `npm run build` 通过；OpenAPI 29 路径 / 33 操作；联调确认 7 套画像产出互不相同的推荐
 
 ---
 
@@ -366,4 +376,6 @@ GET    /api/admin/sync-runs       同步记录
 - 2026-11-25：Phase 5 口味问答画像：8 题四轴问卷、`/api/taste-quiz` 端点、`profile_source` 四种画像来源、设置开关 `quiz_merge_home`、前端 `/taste-quiz` 页面与菜单入口。后端测试增至 79 项，`npm run build` 通过。
 - 2026-11-25：修复线上随机 500——`get_conn` 同步生成器依赖与同步端点被分派到不同线程，`connect()` 默认 `check_same_thread=True` 导致跨线程报错；改为 `check_same_thread=False`（每请求独立连接、建连/使用/关闭串行，安全），新增 `tests/test_db.py` 回归测试，后端 80 项通过。
 - 2026-11-25：真实联调验证：36 并发请求 / 12 线程全部 200；提交悬疑向问卷后得到「剧情向·悬疑·快节奏·多结局」，`library`（高口碑）与 `quiz` / `all` / `auto`（问卷）产出不同作品；关闭 `quiz_merge_home` 后 `auto` 精确回落 `library`。前端 `/api` 代理与 `npm run build` 正常。
+- 2026-11-26：完成 Phase 6 多画像体系：新增画像注册表与通用画像构建（`app/recommend/persona.py`），落地玩家动机、九型人格、大五人格、十二星座、作品二选一 5 套画像与塔罗抽牌；`profile_source` 支持 9 种来源，`all` 按可信度加权合并；设置新增 `home_profile_sources`；前端新增 `/persona` 入口、通用问卷页与三个专用页面，旧 `/taste-quiz` 重定向到 `/persona/quiz`。后端 191 项测试通过，前端构建通过，OpenAPI 29 路径 / 33 操作。
+- 2026-11-26：多画像联调：7 套体系全部注册可用；同一推荐请求在 `library / quiz / motivation / enneagram / bigfive / zodiac / pairwise` 下返回不同首条作品；塔罗同 seed 稳定、单张与三张牌阵标题正确；联调写入的画像数据已恢复，真实库仅保留原有问卷答案。
 - 后续可选：ALS 协同过滤、中文分词/拼音检索、封面本地代理缓存（当前为浏览器 IndexedDB 缓存，跨域图源无 CORS 时不缓存）、Bangumi 中文数据补充（待网络）、VNDB votes dump（待 dumps 站点恢复）

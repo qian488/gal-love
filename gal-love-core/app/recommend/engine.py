@@ -251,12 +251,13 @@ def build_profile(conn: sqlite3.Connection, index: FeatureIndex) -> UserProfile:
 
 
 def _profile_source_name(profile_source: str | None, settings: dict[str, Any]) -> str:
+    from . import persona
+
     mode = "auto" if profile_source is None else str(profile_source).strip().casefold()
-    if mode not in {"auto", "library", "quiz", "all"}:
+    if mode not in persona.allowed_sources():
         raise ValueError(f"unknown profile source: {profile_source!r}")
     if mode == "auto":
-        quiz = settings.get("quiz_profile")
-        if settings.get("quiz_merge_home", True) and isinstance(quiz, dict) and quiz:
+        if settings.get("quiz_merge_home", True) and persona.has_mergeable_profile(settings):
             return "all"
         return "library"
     return mode
@@ -496,6 +497,7 @@ def recommend(
     algorithm: str | None = None,
     profile_source: str | None = None,
     votes_db: Path | str | None = None,
+    profile_override: UserProfile | None = None,
 ) -> list[dict[str, Any]]:
     """Recommend works, optionally blending collaborative filtering.
 
@@ -526,13 +528,14 @@ def recommend(
 
     source = _profile_source_name(profile_source, settings)
     index = FeatureIndex.build(conn)
-    library_profile = build_profile(conn, index)
-    if source == "quiz":
-        profile = build_quiz_profile(conn, index)
-    elif source == "all":
-        profile = merge_profiles(library_profile, build_quiz_profile(conn, index))
+    if profile_override is not None:
+        # 塔罗这类一次性玩法直接注入临时画像，不读取也不写入持久设置。
+        profile = profile_override
     else:
-        profile = library_profile
+        library_profile = build_profile(conn, index)
+        from . import persona
+
+        profile = persona.resolve_profile(conn, index, source, library_profile, settings)
     entries = _entry_map(conn)
     excluded = set(entries) | get_feedback_work_ids(conn, "not_interested")
     platform_key = platform.casefold() if platform else None

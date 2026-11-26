@@ -28,11 +28,29 @@
           <el-switch v-model="form.include_nsfw" />
           </el-form-item>
 
-          <el-form-item label="问卷参与推荐">
+          <el-form-item label="首页综合画像">
             <div class="switch-row">
               <el-switch v-model="form.quiz_merge_home" />
-              <span class="switch-hint">关闭后首页只看游戏库，问卷页只看问卷</span>
+              <span class="switch-hint">关闭后首页只用游戏库画像</span>
             </div>
+          </el-form-item>
+
+          <el-form-item v-if="form.quiz_merge_home" label="参与来源">
+            <el-select
+              v-model="form.home_profile_sources"
+              multiple
+              collapse-tags
+              placeholder="不选则全部参与"
+              style="width: 320px"
+            >
+              <el-option label="我的游戏库" value="library" />
+              <el-option
+                v-for="item in personaOptions"
+                :key="item.key"
+                :label="item.title"
+                :value="item.key"
+              />
+            </el-select>
           </el-form-item>
 
           <el-form-item label="最早年份">
@@ -243,7 +261,7 @@ import { useCatalogStore } from '../store/game'
 import BackupPanel from '../components/BackupPanel.vue'
 import DuplicatesPanel from '../components/DuplicatesPanel.vue'
 import VotesPanel from '../components/VotesPanel.vue'
-import type { Settings, SyncRun } from '../types/api'
+import type { PersonaProviderInfo, Settings, SyncRun } from '../types/api'
 
 const store = useCatalogStore()
 
@@ -275,6 +293,7 @@ const manual = reactive({
 const form = reactive({
   include_nsfw: false,
   quiz_merge_home: true,
+  home_profile_sources: [] as string[],
   min_year: undefined as number | undefined,
   max_length_minutes: undefined as number | undefined,
   platform: '',
@@ -282,9 +301,12 @@ const form = reactive({
   diversity: 0.15,
 })
 
+const personaOptions = ref<PersonaProviderInfo[]>([])
+
 function applySettings(settings: Settings) {
   form.include_nsfw = settings.include_nsfw
   form.quiz_merge_home = settings.quiz_merge_home
+  form.home_profile_sources = settings.home_profile_sources ?? []
   form.min_year = settings.min_year ?? undefined
   form.max_length_minutes = settings.max_length_minutes ?? undefined
   form.platform = settings.platform ?? ''
@@ -298,6 +320,9 @@ async function save() {
     await store.saveSettings({
       include_nsfw: form.include_nsfw,
       quiz_merge_home: form.quiz_merge_home,
+      home_profile_sources: form.home_profile_sources.length
+        ? form.home_profile_sources
+        : null,
       min_year: form.min_year ?? null,
       max_length_minutes: form.max_length_minutes ?? null,
       platform: form.platform || null,
@@ -438,6 +463,13 @@ function formatTime(value?: string | null): string {
 onMounted(async () => {
   await store.fetchSettings()
   applySettings(store.settings)
+  api.personaProviders()
+    .then((data) => {
+      personaOptions.value = data.items.filter((item) => item.key !== 'tarot')
+    })
+    .catch(() => {
+      personaOptions.value = []
+    })
   await store.loadStats()
   await refreshRuns()
 })

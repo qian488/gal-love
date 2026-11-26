@@ -13,6 +13,11 @@ import type {
   ImportVndbInput,
   ManualWorkInput,
   MergeResult,
+  PairwiseAnswerInput,
+  PairwiseAnswerResponse,
+  PairwiseNextResponse,
+  PersonaDetailResponse,
+  PersonaProviderListResponse,
   RecommendationQuery,
   RecommendationResponse,
   RestoreResult,
@@ -21,6 +26,7 @@ import type {
   Stats,
   SyncRunListResponse,
   TagListResponse,
+  TarotDrawResponse,
   TasteQuizResponse,
   VotesImportInput,
   VotesImportResult,
@@ -89,6 +95,22 @@ export const api = {
   tasteQuiz: () => get<TasteQuizResponse>('/taste-quiz'),
   saveTasteQuiz: (answers: Record<string, string>) =>
     post<TasteQuizResponse>('/taste-quiz', { answers }),
+
+  // 画像体系：列表 / 详情 / 提交 / 二选一 / 塔罗
+  personaProviders: () => get<PersonaProviderListResponse>('/persona/providers'),
+  persona: (key: string) => get<PersonaDetailResponse>(`/persona/${key}`),
+  savePersona: (key: string, answers: Record<string, string>) =>
+    post<PersonaDetailResponse>(`/persona/${key}`, { answers }),
+  pairwiseNext: (count = 1, includeNsfw = false) =>
+    get<PairwiseNextResponse>('/persona/pairwise/next', {
+      count,
+      include_nsfw: includeNsfw,
+    }),
+  pairwiseAnswer: (data: PairwiseAnswerInput) =>
+    post<PairwiseAnswerResponse>('/persona/pairwise/answer', data),
+  pairwiseReset: () => post<PersonaDetailResponse>('/persona/pairwise/reset'),
+  tarotDraw: (spread = 1, seed?: string) =>
+    post<TarotDrawResponse>('/persona/tarot/draw', { spread, seed }),
 
   entries: () => get<EntryListResponse>('/me/entries'),
   saveEntry: (workId: number, data: EntryInput) => put<Work>(`/me/entries/${workId}`, data),

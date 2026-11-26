@@ -18,7 +18,7 @@
             <el-icon><HomeFilled /></el-icon>
             推荐
           </el-menu-item>
-          <el-menu-item index="/taste-quiz">
+          <el-menu-item index="/persona">
             <el-icon><QuestionFilled /></el-icon>
             口味测试
           </el-menu-item>
@@ -53,7 +53,7 @@ import { Collection, Compass, HomeFilled, QuestionFilled, Setting } from '@eleme
 const route = useRoute()
 
 const activeMenu = computed(() => {
-  if (route.path.startsWith('/taste-quiz')) return '/taste-quiz'
+  if (route.path.startsWith('/persona') || route.path.startsWith('/taste-quiz')) return '/persona'
   if (route.path.startsWith('/explore') || route.path.startsWith('/works')) return '/explore'
   if (route.path.startsWith('/library')) return '/library'
   if (route.path.startsWith('/settings')) return '/settings'

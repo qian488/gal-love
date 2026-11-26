@@ -14,6 +14,7 @@ from .config import settings
 from .db import connect, db_session, init_db
 from .ingest.bangumi import import_bangumi
 from .ingest.vndb import import_vndb
+from .recommend import persona
 from .recommend.engine import (
     ALGORITHM_VERSION,
     algorithm_version,
@@ -49,11 +50,23 @@ from .schemas import (
     ImportVndbRequest,
     ManualWorkCreate,
     MergeWorksRequest,
+    PairwiseAnswer,
+    PersonaSubmit,
     RestoreRequest,
     SettingsUpdate,
+    TarotDrawRequest,
     TasteQuizSubmit,
     VotesImportRequest,
 )
+
+PROFILE_SOURCE_PATTERN = persona.source_pattern()
+
+
+def _persona_module(key: str) -> Any:
+    try:
+        return persona.get_provider(key)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"unknown persona provider: {key}") from exc
 
 
 def _db_path(request: Request) -> Path:
@@ -198,7 +211,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         language: str | None = None,
         diversity: float | None = Query(default=None, ge=0, le=0.6),
         algorithm: str | None = Query(default=None, pattern="^(auto|content|hybrid)$"),
-        profile_source: str | None = Query(default=None, pattern="^(auto|library|quiz|all)$"),
+        profile_source: str | None = Query(default=None, pattern=PROFILE_SOURCE_PATTERN),
         save: bool = True,
         conn: sqlite3.Connection = Depends(get_conn),
     ) -> dict[str, Any]:
@@ -277,6 +290,72 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         result = calculate_profile(answers)
         set_settings(conn, {"quiz_answers": answers, "quiz_profile": result})
         return _quiz_payload(conn)
+
+    @app.get("/api/persona/providers")
+    def persona_providers(conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
+        return {
+            "items": persona.list_providers(get_settings(conn)),
+            "sources": list(persona.allowed_sources()),
+        }
+
+    @app.get("/api/persona/pairwise/next")
+    def persona_pairwise_next(
+        count: int = Query(default=1, ge=1, le=5),
+        include_nsfw: bool = False,
+        conn: sqlite3.Connection = Depends(get_conn),
+    ) -> dict[str, Any]:
+        module = _persona_module("pairwise")
+        return {"pairs": module.next_pairs(conn, count=count, include_nsfw=include_nsfw)}
+
+    @app.post("/api/persona/pairwise/answer")
+    def persona_pairwise_answer(
+        payload: PairwiseAnswer,
+        conn: sqlite3.Connection = Depends(get_conn),
+    ) -> dict[str, Any]:
+        module = _persona_module("pairwise")
+        result = module.record_choice(
+            conn,
+            winner_id=payload.winner_id,
+            loser_id=payload.loser_id,
+            skipped=payload.skipped,
+        )
+        return {"result": result, "payload": persona.provider_payload(conn, "pairwise")}
+
+    @app.post("/api/persona/pairwise/reset")
+    def persona_pairwise_reset(conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
+        module = _persona_module("pairwise")
+        module.reset(conn)
+        return persona.provider_payload(conn, "pairwise")
+
+    @app.post("/api/persona/tarot/draw")
+    def persona_tarot_draw(
+        payload: TarotDrawRequest,
+        conn: sqlite3.Connection = Depends(get_conn),
+    ) -> dict[str, Any]:
+        module = _persona_module("tarot")
+        return module.draw(conn, spread=payload.spread, seed=payload.seed)
+
+    @app.get("/api/persona/{key}")
+    def persona_detail(key: str, conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
+        try:
+            return persona.provider_payload(conn, key)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404, detail=f"unknown persona provider: {key}"
+            ) from exc
+
+    @app.post("/api/persona/{key}")
+    def persona_submit(
+        key: str,
+        payload: PersonaSubmit,
+        conn: sqlite3.Connection = Depends(get_conn),
+    ) -> dict[str, Any]:
+        try:
+            return persona.save_provider(conn, key, payload.answers)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404, detail=f"unknown persona provider: {key}"
+            ) from exc
 
     @app.get("/api/settings")
     def read_settings(conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:

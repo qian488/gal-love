@@ -10,10 +10,32 @@ const router = createRouter({
       meta: { title: '推荐' },
     },
     {
-      path: '/taste-quiz',
-      name: 'TasteQuiz',
-      component: () => import('../views/TasteQuiz.vue'),
+      path: '/persona',
+      name: 'PersonaHub',
+      component: () => import('../views/PersonaHub.vue'),
       meta: { title: '口味测试' },
+    },
+    {
+      path: '/persona/pairwise',
+      name: 'PairwiseTest',
+      component: () => import('../views/PairwiseTest.vue'),
+      meta: { title: '作品二选一' },
+    },
+    {
+      path: '/persona/tarot',
+      name: 'TarotDraw',
+      component: () => import('../views/TarotDraw.vue'),
+      meta: { title: '塔罗一抽' },
+    },
+    {
+      path: '/persona/:key',
+      name: 'PersonaQuiz',
+      component: () => import('../views/PersonaQuiz.vue'),
+      meta: { title: '画像测试' },
+    },
+    {
+      path: '/taste-quiz',
+      redirect: '/persona/quiz',
     },
     {
       path: '/onboarding',

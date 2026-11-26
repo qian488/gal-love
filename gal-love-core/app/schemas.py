@@ -48,10 +48,26 @@ class SettingsUpdate(BaseModel):
     language: str | None = None
     diversity: float | None = Field(default=None, ge=0, le=0.6)
     quiz_merge_home: bool | None = None
+    home_profile_sources: list[str] | None = None
 
 
 class TasteQuizSubmit(BaseModel):
     answers: dict[str, str] = Field(default_factory=dict)
+
+
+class PersonaSubmit(BaseModel):
+    answers: dict[str, str] = Field(default_factory=dict)
+
+
+class PairwiseAnswer(BaseModel):
+    winner_id: int
+    loser_id: int
+    skipped: bool = False
+
+
+class TarotDrawRequest(BaseModel):
+    spread: int = Field(default=1, ge=1, le=3)
+    seed: str | None = None
 
 
 class ImportVndbRequest(BaseModel):

@@ -74,7 +74,7 @@ npm run dev
 
 ## 端点总览
 
-共 26 个端点，前端方法一一对应：
+共 33 个端点，前端方法一一对应：
 
 | 方法 | 路径 | 前端 `api` 方法 |
 | --- | --- | --- |
@@ -87,6 +87,13 @@ npm run dev
 | GET | `/api/recommendations` | `recommendations(params)` |
 | GET | `/api/taste-quiz` | `tasteQuiz()` |
 | POST | `/api/taste-quiz` | `saveTasteQuiz(answers)` |
+| GET | `/api/persona/providers` | `personaProviders()` |
+| GET | `/api/persona/{key}` | `persona(key)` |
+| POST | `/api/persona/{key}` | `savePersona(key, answers)` |
+| GET | `/api/persona/pairwise/next` | `pairwiseNext(count, includeNsfw)` |
+| POST | `/api/persona/pairwise/answer` | `pairwiseAnswer(data)` |
+| POST | `/api/persona/pairwise/reset` | `pairwiseReset()` |
+| POST | `/api/persona/tarot/draw` | `tarotDraw(spread, seed)` |
 | GET | `/api/me/entries` | `entries()` |
 | PUT | `/api/me/entries/{id}` | `saveEntry(id, data)` |
 | DELETE | `/api/me/entries/{id}` | `deleteEntry(id)` |
@@ -174,18 +181,96 @@ npm run dev
 | `diversity` | number 0–0.6 | — | 多样性 |
 | `save` | boolean | `true` | 是否落库为推荐批次 |
 | `algorithm` | `auto\|content\|hybrid` | `auto` | 推荐算法 |
-| `profile_source` | `auto\|library\|quiz\|all` | `auto` | 画像来源（见下） |
+| `profile_source` | 见下表 | `auto` | 画像来源（见下） |
 
 `profile_source` 决定用哪份口味画像：
 
 | 值 | 含义 |
 | --- | --- |
 | `library` | 只用游戏库记录（`my_entries`）生成的画像 |
-| `quiz` | 只用口味测试画像；未做测试时按高口碑冷启动推荐 |
-| `all` | 合并游戏库画像与问卷画像 |
-| `auto` | `quiz_merge_home` 开启且已有问卷画像时等价于 `all`，否则等价于 `library` |
+| `pairwise` | 只用作品二选一累计出的画像 |
+| `quiz` / `motivation` / `enneagram` / `bigfive` / `zodiac` | 只用对应画像；未作答时按高口碑冷启动推荐 |
+| `all` | 按 `home_profile_sources` 合并（默认合并全部已有画像）。权重：library 0.45、pairwise 0.30、各问卷 0.15、zodiac 0.05；未答完的画像权重 ×0.6 |
+| `auto` | `quiz_merge_home` 开启且选中的画像有内容时等价于 `all`，否则等价于 `library` |
+| `tarot` | 抽牌时的一次性临时画像，不落库 |
 
 响应：`RecommendationResponse` = `{ items: Work[], batch_id: string | null, algorithm_version: string, profile_source: string }`。`save=false` 时 `batch_id` 为 `null`。每条 `Work` 可能带 `score`、`reason`、`shared_tags`、`algorithm_version`、`profile_source` 等推荐解释字段。
+
+---
+
+### 画像体系
+
+`GET /api/persona/providers` 返回全部已注册的画像体系：
+
+```json
+{
+  "items": [
+    {
+      "key": "motivation",
+      "title": "玩家动机",
+      "subtitle": "24 题，测你从视觉小说里想获得什么体验",
+      "kind": "questionnaire",
+      "group": "serious",
+      "estimated_minutes": 5,
+      "question_count": 24,
+      "completed": false,
+      "code": null,
+      "labels": [],
+      "notice": "维度参考公开的玩家动机模型，题目为自编，仅用于口味推荐。"
+    }
+  ],
+  "sources": ["auto", "library", "all", "quiz", "motivation", "enneagram", "bigfive", "zodiac", "pairwise", "tarot"]
+}
+```
+
+`kind` 取值：`questionnaire`（问卷）、`birthday`（生日输入）、`pairwise`（作品对比）、`draw`（抽牌）。`group` 供前端分组：`quick` / `play` / `fun` / `serious`。
+
+`GET /api/persona/{key}` 返回 `{ key, title, kind, questions, answers, result, notice, extra }`；`POST /api/persona/{key}` 请求体 `{ "answers": { ... } }`，保存并返回相同结构。`zodiac` 使用 `{ "answers": { "birthday": "1996-11-03" } }`。
+
+`result` 为所有体系共用：`code`、`labels`、`tags`、`year_center`、`length_center`、`completed`。部分体系额外带 `scores`（大五 O/C/E/A/N、九型 1–9、动机 8 维，均为 0–100）。
+
+已注册体系：`quiz`（8 题四轴）、`motivation`（24 题 8 维玩家动机）、`enneagram`（18 题九型 + 侧翼）、`bigfive`（10 题 BFI-10 式）、`zodiac`（生日）、`pairwise`（作品二选一）、`tarot`（抽牌）。
+
+#### 作品二选一
+
+- `GET /api/persona/pairwise/next?count=1&include_nsfw=false` → `{ "pairs": [{ "left": Work, "right": Work }] }`
+- `POST /api/persona/pairwise/answer`，请求体 `{ "winner_id": 1, "loser_id": 2, "skipped": false }` → `{ "result": PersonaResult, "payload": PersonaDetail }`
+- `POST /api/persona/pairwise/reset` → 清空二选一结果并返回该体系详情
+
+累计 10 轮后 `result.completed` 为 `true`；跳过的轮次不产生标签权重。
+
+#### 塔罗抽牌
+
+`POST /api/persona/tarot/draw`，请求体 `{ "spread": 1, "seed": "可选" }`（`spread` 取 1 或 3）：
+
+```json
+{
+  "cards": [
+    {
+      "id": "major-03",
+      "name": "The Empress",
+      "name_zh": "皇后",
+      "position": "主题",
+      "reversed": false,
+      "themes": ["丰饶", "温柔"],
+      "meaning": "好好被照顾，也好好照顾喜欢的人。"
+    }
+  ],
+  "result": {
+    "code": "今日指引：皇后",
+    "labels": ["皇后"],
+    "tags": { "Romance": 0.8 },
+    "year_center": null,
+    "length_center": null,
+    "completed": false
+  },
+  "items": ["…8 部推荐作品"],
+  "spread": 1,
+  "seed": "2026-11-26"
+}
+```
+
+不写入画像；`seed` 缺省为当天日期，同一天结果稳定。
 
 ---
 
@@ -265,16 +350,19 @@ npm run dev
   "diversity": 0.15,
   "quiz_answers": {},
   "quiz_profile": null,
-  "quiz_merge_home": true
+  "quiz_merge_home": true,
+  "persona_profiles": {},
+  "home_profile_sources": null
 }
 ```
 
-`quiz_answers` 为已保存的问卷答案，`quiz_profile` 为计算出的画像结果（结构见口味测试），`quiz_merge_home` 控制首页推荐是否并入问卷画像。
+`quiz_answers` 为已保存的问卷答案，`quiz_profile` 为计算出的画像结果（结构见口味测试），`quiz_merge_home` 控制首页推荐是否启用综合画像。`persona_profiles` 保存各画像体系的答案与结果，结构为 `{ key: { answers, profile, updated_at } }`；其中 `quiz` 会同时写入旧的 `quiz_answers` / `quiz_profile` 以保持兼容。`home_profile_sources` 为 `null` 时合并全部已完成的画像，传数组则只合并列出的来源（如 `["library", "motivation"]`）。
 
 #### PUT `/api/settings`
 请求体：`SettingsPatch`（`Settings` 的任意子集）。响应：更新后的 `Settings`。
 
-- `quiz_merge_home: true` → 首页 `auto` 合并游戏库与问卷画像；`false` → 首页只看游戏库，问卷页仍只看问卷。
+- `quiz_merge_home: true` → 首页 `auto` 启用综合画像；`false` → 首页只用游戏库画像，各画像页仍只看各自结果。
+- `home_profile_sources: ["library", "motivation"]` → 首页只合并这两份；传 `null` 或空数组 → 合并全部已完成的画像。
 
 ---
 
