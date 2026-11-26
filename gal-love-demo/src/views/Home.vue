@@ -206,7 +206,7 @@ function recommendationParams(): RecommendationParams {
   const s = store.settings
   return {
     limit: 12,
-    include_nsfw: s.include_nsfw,
+    nsfw_policy: s.nsfw_policy,
     min_year: s.min_year ?? undefined,
     max_length_minutes: s.max_length_minutes ?? undefined,
     platform: s.platform ?? undefined,

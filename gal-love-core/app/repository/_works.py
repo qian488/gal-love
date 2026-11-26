@@ -1,17 +1,21 @@
-"""Persistence helpers for the personal Gal Love database."""
+"""Work / tag / company persistence helpers."""
 
 from __future__ import annotations
 
 import sqlite3
-import uuid
 from collections import defaultdict
 from typing import Any, Iterable
 
-from .normalize import json_dumps, json_loads, normalize_text, now_iso, parse_year, unique_preserving_order
-from .tag_zh import canonical_lookup, canonical_lookup_keys
-
-ENTRY_STATUSES = {"want", "playing", "finished", "dropped"}
-FEEDBACK_KINDS = {"not_interested", "like", "dislike", "seen"}
+from ..normalize import (
+    json_dumps,
+    json_loads,
+    normalize_text,
+    now_iso,
+    parse_year,
+    unique_preserving_order,
+)
+from ..nsfw import normalize_policy, sql_clause
+from ..tag_zh import canonical_lookup, canonical_lookup_keys
 
 
 def _work_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -760,7 +764,8 @@ def search_works(
     query: str | None = None,
     tag: str | None = None,
     status: str | None = None,
-    include_nsfw: bool = False,
+    include_nsfw: bool | None = None,
+    nsfw_policy: str | None = None,
     min_rating: float | None = None,
     platform: str | None = None,
     language: str | None = None,
@@ -811,8 +816,12 @@ def search_works(
     elif status:
         where.append("EXISTS (SELECT 1 FROM my_entries e WHERE e.work_id = w.id AND e.status = ?)")
         params.append(status)
-    if not include_nsfw:
-        where.append("w.nsfw = 0")
+    policy = normalize_policy(
+        nsfw_policy if nsfw_policy is not None else (True if include_nsfw else "off")
+    )
+    clause = sql_clause(policy)
+    if clause:
+        where.append(clause)
     if min_rating is not None:
         where.append("w.rating IS NOT NULL AND w.rating >= ?")
         params.append(min_rating)
@@ -906,192 +915,3 @@ def list_tags(conn: sqlite3.Connection, query: str | None = None, limit: int = 1
         result.append(item)
     return result
 
-
-def get_entries(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        "SELECT work_id, status, rating, favorite, notes, started_at, finished_at, updated_at "
-        "FROM my_entries ORDER BY updated_at DESC"
-    ).fetchall()
-    result: list[dict[str, Any]] = []
-    for row in rows:
-        work = get_work(conn, int(row["work_id"]))
-        if not work:
-            continue
-        work["entry"] = {
-            "status": row["status"],
-            "rating": row["rating"],
-            "favorite": bool(row["favorite"]),
-            "notes": row["notes"],
-            "started_at": row["started_at"],
-            "finished_at": row["finished_at"],
-            "updated_at": row["updated_at"],
-        }
-        result.append(work)
-    return result
-
-
-def upsert_entry(conn: sqlite3.Connection, work_id: int, data: dict[str, Any]) -> dict[str, Any] | None:
-    existing = conn.execute("SELECT * FROM my_entries WHERE work_id = ?", (work_id,)).fetchone()
-    status = data.get("status") or (existing["status"] if existing else "want")
-    if status not in ENTRY_STATUSES:
-        raise ValueError(f"invalid status: {status}")
-    rating = data.get("rating", existing["rating"] if existing else None)
-    if rating is not None:
-        rating = float(rating)
-        if rating < 0 or rating > 10:
-            raise ValueError("rating must be between 0 and 10")
-    favorite = data.get("favorite")
-    if favorite is None:
-        favorite = bool(existing["favorite"]) if existing else False
-    notes = data.get("notes", existing["notes"] if existing else None)
-    timestamp = now_iso()
-    conn.execute(
-        """
-        INSERT INTO my_entries(work_id, status, rating, favorite, notes, started_at, finished_at, updated_at)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(work_id) DO UPDATE SET
-            status = excluded.status,
-            rating = excluded.rating,
-            favorite = excluded.favorite,
-            notes = excluded.notes,
-            updated_at = excluded.updated_at
-        """,
-        (
-            work_id,
-            status,
-            rating,
-            1 if favorite else 0,
-            notes,
-            data.get("started_at", existing["started_at"] if existing else None),
-            data.get("finished_at", existing["finished_at"] if existing else None),
-            timestamp,
-        ),
-    )
-    conn.commit()
-    return get_work(conn, work_id)
-
-
-def delete_entry(conn: sqlite3.Connection, work_id: int) -> None:
-    conn.execute("DELETE FROM my_entries WHERE work_id = ?", (work_id,))
-    conn.commit()
-
-
-def add_feedback(conn: sqlite3.Connection, work_id: int, kind: str, note: str | None = None) -> None:
-    if kind not in FEEDBACK_KINDS:
-        raise ValueError(f"invalid feedback kind: {kind}")
-    conn.execute(
-        """
-        INSERT INTO feedback(work_id, kind, note, created_at)
-        VALUES(?, ?, ?, ?)
-        ON CONFLICT(work_id, kind) DO UPDATE SET note = excluded.note, created_at = excluded.created_at
-        """,
-        (work_id, kind, note, now_iso()),
-    )
-    conn.commit()
-
-
-def get_feedback_work_ids(conn: sqlite3.Connection, kind: str = "not_interested") -> set[int]:
-    return {
-        int(row["work_id"])
-        for row in conn.execute("SELECT work_id FROM feedback WHERE kind = ?", (kind,)).fetchall()
-    }
-
-
-def get_settings(conn: sqlite3.Connection) -> dict[str, Any]:
-    defaults: dict[str, Any] = {
-        "include_nsfw": False,
-        "min_year": None,
-        "max_length_minutes": None,
-        "platform": None,
-        "language": None,
-        "diversity": 0.15,
-        "quiz_answers": {},
-        "quiz_profile": None,
-        "quiz_merge_home": True,
-        "persona_profiles": {},
-        "home_profile_sources": None,
-    }
-    for row in conn.execute("SELECT key, value FROM settings").fetchall():
-        defaults[row["key"]] = json_loads(row["value"], row["value"])
-    return defaults
-
-
-def set_settings(conn: sqlite3.Connection, values: dict[str, Any]) -> dict[str, Any]:
-    for key, value in values.items():
-        conn.execute(
-            "INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            (key, json_dumps(value)),
-        )
-    conn.commit()
-    return get_settings(conn)
-
-
-def start_sync_run(conn: sqlite3.Connection, source: str) -> int:
-    cur = conn.execute(
-        "INSERT INTO sync_runs(source, status, started_at) VALUES(?, 'running', ?)",
-        (source, now_iso()),
-    )
-    conn.commit()
-    return int(cur.lastrowid)
-
-
-def finish_sync_run(
-    conn: sqlite3.Connection,
-    run_id: int,
-    status: str,
-    stats: dict[str, Any] | None = None,
-    error: str | None = None,
-) -> None:
-    conn.execute(
-        "UPDATE sync_runs SET status = ?, finished_at = ?, stats_json = ?, error = ? WHERE id = ?",
-        (status, now_iso(), json_dumps(stats or {}), error, run_id),
-    )
-    conn.commit()
-
-
-def get_sync_runs(conn: sqlite3.Connection, limit: int = 20) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        "SELECT * FROM sync_runs ORDER BY id DESC LIMIT ?", (max(1, min(100, limit)),)
-    ).fetchall()
-    result = []
-    for row in rows:
-        item = dict(row)
-        item["stats"] = json_loads(item.pop("stats_json"), {})
-        result.append(item)
-    return result
-
-
-def save_recommendations(
-    conn: sqlite3.Connection,
-    items: list[dict[str, Any]],
-    algorithm_version: str = "content-v1",
-) -> str:
-    batch_id = uuid.uuid4().hex
-    timestamp = now_iso()
-    conn.executemany(
-        """
-        INSERT INTO recommendations(batch_id, work_id, score, reason, algorithm_version, created_at)
-        VALUES(?, ?, ?, ?, ?, ?)
-        """,
-        [
-            (batch_id, item["id"], item["score"], item.get("reason"), algorithm_version, timestamp)
-            for item in items
-        ],
-    )
-    conn.commit()
-    return batch_id
-
-
-def get_stats(conn: sqlite3.Connection) -> dict[str, Any]:
-    def count(table: str) -> int:
-        return int(conn.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()["c"])
-
-    return {
-        "works": count("works"),
-        "tags": count("tags"),
-        "companies": count("companies"),
-        "entries": count("my_entries"),
-        "feedback": count("feedback"),
-        "recommendations": count("recommendations"),
-        "sync_runs": count("sync_runs"),
-    }

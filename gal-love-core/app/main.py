@@ -157,9 +157,15 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         sort: str = Query(default="rating", pattern="^(rating|votes|release|title|random)$"),
         page: int = Query(default=1, ge=1),
         limit: int = Query(default=20, ge=1, le=100),
-        include_nsfw: bool = False,
+        include_nsfw: bool | None = None,
+        nsfw_policy: str | None = Query(default=None, pattern="^(off|story|all)$"),
         conn: sqlite3.Connection = Depends(get_conn),
     ) -> dict[str, Any]:
+        if nsfw_policy is None:
+            if include_nsfw is not None:
+                nsfw_policy = "all" if include_nsfw else "off"
+            else:
+                nsfw_policy = get_settings(conn)["nsfw_policy"]
         return search_works(
             conn,
             query=q,
@@ -173,7 +179,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             sort=sort,
             page=page,
             limit=limit,
-            include_nsfw=include_nsfw,
+            nsfw_policy=nsfw_policy,
         )
 
     @app.get("/api/works/{work_id}")
@@ -205,6 +211,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     def recommendations(
         limit: int = Query(default=20, ge=1, le=50),
         include_nsfw: bool | None = None,
+        nsfw_policy: str | None = Query(default=None, pattern="^(off|story|all)$"),
         min_year: int | None = Query(default=None, ge=1900, le=2100),
         max_length_minutes: int | None = Query(default=None, ge=1),
         platform: str | None = None,
@@ -220,6 +227,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             conn,
             limit=limit,
             include_nsfw=include_nsfw,
+            nsfw_policy=nsfw_policy,
             min_year=min_year,
             max_length_minutes=max_length_minutes,
             platform=platform,
@@ -301,11 +309,17 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     @app.get("/api/persona/pairwise/next")
     def persona_pairwise_next(
         count: int = Query(default=1, ge=1, le=5),
-        include_nsfw: bool = False,
+        include_nsfw: bool | None = None,
+        nsfw_policy: str | None = Query(default=None, pattern="^(off|story|all)$"),
         conn: sqlite3.Connection = Depends(get_conn),
     ) -> dict[str, Any]:
         module = _persona_module("pairwise")
-        return {"pairs": module.next_pairs(conn, count=count, include_nsfw=include_nsfw)}
+        if nsfw_policy is None:
+            if include_nsfw is not None:
+                nsfw_policy = "all" if include_nsfw else "off"
+            else:
+                nsfw_policy = get_settings(conn)["nsfw_policy"]
+        return {"pairs": module.next_pairs(conn, count=count, nsfw_policy=nsfw_policy)}
 
     @app.post("/api/persona/pairwise/answer")
     def persona_pairwise_answer(

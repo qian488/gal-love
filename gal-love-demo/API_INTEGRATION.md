@@ -90,7 +90,7 @@ npm run dev
 | GET | `/api/persona/providers` | `personaProviders()` |
 | GET | `/api/persona/{key}` | `persona(key)` |
 | POST | `/api/persona/{key}` | `savePersona(key, answers)` |
-| GET | `/api/persona/pairwise/next` | `pairwiseNext(count, includeNsfw)` |
+| GET | `/api/persona/pairwise/next` | `pairwiseNext(count, nsfwPolicy?)` |
 | POST | `/api/persona/pairwise/answer` | `pairwiseAnswer(data)` |
 | POST | `/api/persona/pairwise/reset` | `pairwiseReset()` |
 | POST | `/api/persona/tarot/draw` | `tarotDraw(spread, seed)` |
@@ -150,7 +150,8 @@ npm run dev
 | `sort` | `rating\|votes\|release\|title\|random` | `rating` | 排序 |
 | `page` | int ≥1 | 1 | 页码 |
 | `limit` | int 1–100 | 20 | 每页条数 |
-| `include_nsfw` | boolean | `false` | 是否包含 NSFW |
+| `nsfw_policy` | `off\|story\|all` | 取设置 | 内容范围：`off` 仅全年龄、`story` 含成人剧情作（排除拔作）、`all` 全部 |
+| `include_nsfw` | boolean | — | 兼容旧调用，等价于 `off` / `all`；与 `nsfw_policy` 同时给出时以 `nsfw_policy` 为准 |
 | `platform` | string | — | 平台筛选（本轮新增） |
 | `language` | string | — | 语言筛选（本轮新增） |
 | `min_year` | int | — | 最早发行年份（本轮新增） |
@@ -173,7 +174,8 @@ npm run dev
 | 参数 | 类型 | 默认 | 说明 |
 | --- | --- | --- | --- |
 | `limit` | int 1–50 | 20 | 推荐条数 |
-| `include_nsfw` | boolean\|null | null | 是否包含 NSFW，缺省用设置 |
+| `nsfw_policy` | `off\|story\|all` | 取设置 | 内容范围，缺省读设置 |
+| `include_nsfw` | boolean\|null | null | 兼容旧调用，等价于 `off` / `all` |
 | `min_year` | int 1900–2100 | — | 最早发行年份 |
 | `max_length_minutes` | int ≥1 | — | 最长时长（分钟） |
 | `platform` | string | — | 平台 |
@@ -191,7 +193,7 @@ npm run dev
 | `pairwise` | 只用作品二选一累计出的画像 |
 | `quiz` / `motivation` / `enneagram` / `bigfive` / `zodiac` | 只用对应画像；未作答时按高口碑冷启动推荐 |
 | `all` | 按 `home_profile_sources` 合并（默认合并全部已有画像）。权重：library 0.45、pairwise 0.30、各问卷 0.15、zodiac 0.05；未答完的画像权重 ×0.6 |
-| `auto` | `quiz_merge_home` 开启且选中的画像有内容时等价于 `all`，否则等价于 `library` |
+| `auto` | `home_profile_sources` 里还有可用画像时等价于 `all`，否则等价于 `library` |
 | `tarot` | 抽牌时的一次性临时画像，不落库 |
 
 响应：`RecommendationResponse` = `{ items: Work[], batch_id: string | null, algorithm_version: string, profile_source: string }`。`save=false` 时 `batch_id` 为 `null`。每条 `Work` 可能带 `score`、`reason`、`shared_tags`、`algorithm_version`、`profile_source` 等推荐解释字段。
@@ -233,7 +235,7 @@ npm run dev
 
 #### 作品二选一
 
-- `GET /api/persona/pairwise/next?count=1&include_nsfw=false` → `{ "pairs": [{ "left": Work, "right": Work }] }`
+- `GET /api/persona/pairwise/next?count=1&nsfw_policy=story` → `{ "pairs": [{ "left": Work, "right": Work }] }`（`include_nsfw` 仍兼容，缺省读设置）
 - `POST /api/persona/pairwise/answer`，请求体 `{ "winner_id": 1, "loser_id": 2, "skipped": false }` → `{ "result": PersonaResult, "payload": PersonaDetail }`
 - `POST /api/persona/pairwise/reset` → 清空二选一结果并返回该体系详情
 
@@ -342,6 +344,7 @@ npm run dev
 响应：`Settings`
 ```json
 {
+  "nsfw_policy": "off",
   "include_nsfw": false,
   "min_year": null,
   "max_length_minutes": null,
@@ -356,13 +359,18 @@ npm run dev
 }
 ```
 
-`quiz_answers` 为已保存的问卷答案，`quiz_profile` 为计算出的画像结果（结构见口味测试），`quiz_merge_home` 控制首页推荐是否启用综合画像。`persona_profiles` 保存各画像体系的答案与结果，结构为 `{ key: { answers, profile, updated_at } }`；其中 `quiz` 会同时写入旧的 `quiz_answers` / `quiz_profile` 以保持兼容。`home_profile_sources` 为 `null` 时合并全部已完成的画像，传数组则只合并列出的来源（如 `["library", "motivation"]`）。
+`nsfw_policy` 是内容范围的唯一来源：`off`（仅全年龄）/ `story`（含成人剧情作、排除拔作）/ `all`（全部）。`include_nsfw` 是派生字段，恒等于 `nsfw_policy === "all"`，仅为旧客户端保留，写入时请用 `nsfw_policy`。
+
+`home_profile_sources` 是首页画像来源的唯一开关：`null` 表示合并全部已完成画像，数组则只合并列出的来源（如 `["library", "motivation"]`），`["library"]` 等价于只用游戏库。`quiz_merge_home` 同样是派生字段，恒等于 `home_profile_sources !== ["library"]`。
+
+`quiz_answers` 为已保存的问卷答案，`quiz_profile` 为计算出的画像结果（结构见口味测试）。`persona_profiles` 保存各画像体系的答案与结果，结构为 `{ key: { answers, profile, updated_at } }`；其中 `quiz` 会同时写入旧的 `quiz_answers` / `quiz_profile` 以保持兼容。
 
 #### PUT `/api/settings`
-请求体：`SettingsPatch`（`Settings` 的任意子集）。响应：更新后的 `Settings`。
+请求体：`SettingsPatch`（`Settings` 的任意子集，只更新出现的字段）。响应：更新后的 `Settings`。
 
-- `quiz_merge_home: true` → 首页 `auto` 启用综合画像；`false` → 首页只用游戏库画像，各画像页仍只看各自结果。
+- `nsfw_policy: "story"` → 检索、推荐、二选一都保留成人剧情作，排除带 `Nukige` 标签的拔作。
 - `home_profile_sources: ["library", "motivation"]` → 首页只合并这两份；传 `null` 或空数组 → 合并全部已完成的画像。
+- 写入 `include_nsfw` / `quiz_merge_home` 会被翻译成对应新字段，两者不会同时生效。
 
 ---
 
@@ -542,9 +550,10 @@ dump 文件不存在时返回错误（前端拦截器会展示 `detail`）。
 | `VotesStats` | `GET /api/admin/votes/stats` |
 | `VotesImportInput` / `VotesImportResult` | `POST /api/admin/votes/import` |
 | `RecommendationAlgorithm`（`auto\|content\|hybrid`） | `GET /api/recommendations` 的 `algorithm` 参数 |
-| `ProfileSource`（`auto\|library\|quiz\|all`） | `GET /api/recommendations` 的 `profile_source` 参数 |
+| `ProfileSource`（`auto\|library\|quiz\|motivation\|enneagram\|bigfive\|zodiac\|pairwise\|tarot\|all`） | `GET /api/recommendations` 的 `profile_source` 参数 |
+| `NsfwPolicy`（`off\|story\|all`） | `GET /api/works`、`GET /api/recommendations`、`GET /api/persona/pairwise/next` 的 `nsfw_policy` 参数 |
 | `TasteQuizQuestion` / `TasteQuizOption` / `TasteQuizResult` / `TasteQuizResponse` | `GET` / `POST /api/taste-quiz` |
 
-字段扩展：`WorkQuery` 新增 `platform`、`language`、`min_year`、`max_length_minutes`；`RecommendationQuery` 新增 `profile_source`；`Settings` 新增 `quiz_answers`、`quiz_profile`、`quiz_merge_home`；`ImportVndbInput` / `ImportBangumiInput` 新增 `incremental`。既有类型名保持不变。
+字段扩展：`WorkQuery` / `RecommendationQuery` 新增 `platform`、`language`、`min_year`、`max_length_minutes`、`nsfw_policy`；`RecommendationQuery` 另新增 `profile_source`；`Settings` 新增 `nsfw_policy`、`home_profile_sources`、`quiz_answers`、`quiz_profile`、`persona_profiles`（`include_nsfw` / `quiz_merge_home` 保留为派生兼容字段）；`ImportVndbInput` / `ImportBangumiInput` 新增 `incremental`。既有类型名保持不变。
 
 接口变更时，请同步更新本文、`src/types/api.ts` 与 `src/api/index.ts`。

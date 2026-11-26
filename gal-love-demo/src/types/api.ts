@@ -268,13 +268,19 @@ export interface FeedbackInput {
   note?: string | null
 }
 
+export type NsfwPolicy = 'off' | 'story' | 'all'
+
 export interface Settings {
+  /** 内容范围：off 仅全年龄 / story 含成人剧情作（排除拔作）/ all 全部 */
+  nsfw_policy: NsfwPolicy
+  /** 兼容字段，等价于 nsfw_policy === 'all'；写入时请用 nsfw_policy。 */
   include_nsfw: boolean
   min_year: number | null
   max_length_minutes: number | null
   platform: string | null
   language: string | null
   diversity: number
+  /** 兼容字段，由 home_profile_sources 派生；写入时请用 home_profile_sources。 */
   quiz_merge_home: boolean
   /** null 表示「所有已完成的画像都参与」，数组则只合并列出的来源。 */
   home_profile_sources?: string[] | null
@@ -308,6 +314,8 @@ export interface WorkQuery {
   sort?: 'rating' | 'votes' | 'release' | 'title' | 'random'
   page?: number
   limit?: number
+  nsfw_policy?: NsfwPolicy
+  /** @deprecated 使用 nsfw_policy */
   include_nsfw?: boolean
   platform?: string
   language?: string
@@ -319,6 +327,8 @@ export type RecommendationAlgorithm = 'auto' | 'content' | 'hybrid'
 
 export interface RecommendationQuery {
   limit?: number
+  nsfw_policy?: NsfwPolicy
+  /** @deprecated 使用 nsfw_policy */
   include_nsfw?: boolean
   min_year?: number
   max_length_minutes?: number

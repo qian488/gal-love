@@ -171,7 +171,9 @@ def test_resolve_profile_by_source(conn):
     assert missing.has_profile is False
 
 
-def test_auto_source_follows_quiz_merge_home(conn):
+def test_auto_source_follows_home_profile_sources(conn):
+    from app.repository import set_settings
+
     settings = get_settings(conn)
     assert _profile_source_name("auto", settings) == "library"
 
@@ -179,7 +181,11 @@ def test_auto_source_follows_quiz_merge_home(conn):
     settings = get_settings(conn)
     assert _profile_source_name("auto", settings) == "all"
 
-    settings["quiz_merge_home"] = False
+    # 旧开关不再独立生效，而是翻译成唯一的 home_profile_sources。
+    set_settings(conn, {"quiz_merge_home": False})
+    settings = get_settings(conn)
+    assert settings["home_profile_sources"] == ["library"]
+    assert settings["quiz_merge_home"] is False
     assert _profile_source_name("auto", settings) == "library"
 
     with pytest.raises(ValueError):

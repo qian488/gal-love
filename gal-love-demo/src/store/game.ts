@@ -17,6 +17,7 @@ import type {
 export type RecommendationParams = RecommendationQuery & { algorithm?: string }
 
 const defaultSettings: Settings = {
+  nsfw_policy: 'off',
   include_nsfw: false,
   min_year: null,
   max_length_minutes: null,

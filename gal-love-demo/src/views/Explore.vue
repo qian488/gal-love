@@ -146,8 +146,12 @@
       </el-select>
 
       <div class="switch-field">
-        <span>包含 R18</span>
-        <el-switch v-model="includeNsfw" @change="onFilterChange" />
+        <span>内容范围</span>
+        <el-select v-model="nsfwPolicy" class="filter-select" @change="onFilterChange">
+          <el-option label="仅全年龄" value="off" />
+          <el-option label="含成人剧情作" value="story" />
+          <el-option label="全部内容" value="all" />
+        </el-select>
       </div>
 
       <el-button @click="resetFilters">重置</el-button>
@@ -204,7 +208,7 @@ import { Close, Search } from '@element-plus/icons-vue'
 import WorkCard from '../components/WorkCard.vue'
 import { api, entryStatusLabels } from '../api'
 import { useCatalogStore } from '../store/game'
-import type { TagInfo, Work, WorkQuery } from '../types/api'
+import type { NsfwPolicy, TagInfo, Work, WorkQuery } from '../types/api'
 
 // 后端契约由另一个 agent 补齐（Work.title_zh、TagInfo.name_zh/aliases、
 // WorkQuery 的 platform/language/min_year/max_length_minutes），这里用局部类型兜底，
@@ -247,7 +251,7 @@ const maxLength = ref<number | undefined>(toNumber(route.query.max_length_minute
 const sort = ref<NonNullable<WorkQuery['sort']>>(
   (route.query.sort as NonNullable<WorkQuery['sort']>) ?? 'rating',
 )
-const includeNsfw = ref(false)
+const nsfwPolicy = ref<NsfwPolicy>('off')
 
 const page = ref(1)
 const limit = 24
@@ -388,7 +392,7 @@ async function loadWorks(): Promise<void> {
     sort: sort.value,
     page: page.value,
     limit,
-    include_nsfw: includeNsfw.value,
+    nsfw_policy: nsfwPolicy.value,
   } as WorkQuery
 
   loading.value = true
@@ -484,7 +488,7 @@ function resetFilters(): void {
   minYear.value = undefined
   maxLength.value = undefined
   sort.value = 'rating'
-  includeNsfw.value = false
+  nsfwPolicy.value = store.settings.nsfw_policy ?? 'off'
   suggestions.value = []
   panelOpen.value = false
   performSearch(false)
@@ -537,7 +541,7 @@ watch(
 
 onMounted(async () => {
   await store.fetchSettings()
-  includeNsfw.value = store.settings.include_nsfw
+  nsfwPolicy.value = store.settings.nsfw_policy ?? 'off'
   try {
     tags.value = (await api.tags({ limit: 300 })).items
   } catch {

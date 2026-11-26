@@ -24,33 +24,33 @@
         </div>
 
         <el-form label-width="110px" label-position="left">
-          <el-form-item label="包含 R18">
-          <el-switch v-model="form.include_nsfw" />
-          </el-form-item>
-
-          <el-form-item label="首页综合画像">
-            <div class="switch-row">
-              <el-switch v-model="form.quiz_merge_home" />
-              <span class="switch-hint">关闭后首页只用游戏库画像</span>
-            </div>
-          </el-form-item>
-
-          <el-form-item v-if="form.quiz_merge_home" label="参与来源">
-            <el-select
-              v-model="form.home_profile_sources"
-              multiple
-              collapse-tags
-              placeholder="不选则全部参与"
-              style="width: 320px"
-            >
-              <el-option label="我的游戏库" value="library" />
-              <el-option
-                v-for="item in personaOptions"
-                :key="item.key"
-                :label="item.title"
-                :value="item.key"
-              />
+          <el-form-item label="内容范围">
+            <el-select v-model="form.nsfw_policy" style="width: 240px">
+              <el-option label="仅全年龄" value="off" />
+              <el-option label="含成人剧情作" value="story" />
+              <el-option label="全部内容" value="all" />
             </el-select>
+          </el-form-item>
+
+          <el-form-item label="参与来源">
+            <div class="switch-row">
+              <el-select
+                v-model="form.home_profile_sources"
+                multiple
+                collapse-tags
+                placeholder="不选则全部参与"
+                style="width: 320px"
+              >
+                <el-option label="我的游戏库" value="library" />
+                <el-option
+                  v-for="item in personaOptions"
+                  :key="item.key"
+                  :label="item.title"
+                  :value="item.key"
+                />
+              </el-select>
+              <span class="switch-hint">只选游戏库时，首页只用游戏库画像</span>
+            </div>
           </el-form-item>
 
           <el-form-item label="最早年份">
@@ -261,7 +261,7 @@ import { useCatalogStore } from '../store/game'
 import BackupPanel from '../components/BackupPanel.vue'
 import DuplicatesPanel from '../components/DuplicatesPanel.vue'
 import VotesPanel from '../components/VotesPanel.vue'
-import type { PersonaProviderInfo, Settings, SyncRun } from '../types/api'
+import type { NsfwPolicy, PersonaProviderInfo, Settings, SyncRun } from '../types/api'
 
 const store = useCatalogStore()
 
@@ -291,8 +291,7 @@ const manual = reactive({
 })
 
 const form = reactive({
-  include_nsfw: false,
-  quiz_merge_home: true,
+  nsfw_policy: 'off' as NsfwPolicy,
   home_profile_sources: [] as string[],
   min_year: undefined as number | undefined,
   max_length_minutes: undefined as number | undefined,
@@ -304,8 +303,7 @@ const form = reactive({
 const personaOptions = ref<PersonaProviderInfo[]>([])
 
 function applySettings(settings: Settings) {
-  form.include_nsfw = settings.include_nsfw
-  form.quiz_merge_home = settings.quiz_merge_home
+  form.nsfw_policy = settings.nsfw_policy ?? (settings.include_nsfw ? 'all' : 'off')
   form.home_profile_sources = settings.home_profile_sources ?? []
   form.min_year = settings.min_year ?? undefined
   form.max_length_minutes = settings.max_length_minutes ?? undefined
@@ -318,8 +316,7 @@ async function save() {
   saving.value = true
   try {
     await store.saveSettings({
-      include_nsfw: form.include_nsfw,
-      quiz_merge_home: form.quiz_merge_home,
+      nsfw_policy: form.nsfw_policy,
       home_profile_sources: form.home_profile_sources.length
         ? form.home_profile_sources
         : null,

@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import math
 import sqlite3
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
 from ..normalize import json_loads, normalize_text
+from ..nsfw import NUKIGE_TAG, allows, normalize_policy
 from ..repository import get_feedback_work_ids, get_settings, get_work
 from ..tag_zh import canonical_lookup_keys
 from . import cf
@@ -31,6 +34,74 @@ SIMILAR_CF_WEIGHT = 0.35
 CF_MIN_CO_VOTES = 2
 CF_TOP_K = 30
 CF_REASON_THRESHOLD = 0.05
+
+# Per-category multiplier applied to every work_tag weight before TF-IDF.
+# Erotic tags dominate the raw counts and otherwise drown out genre signal.
+# Unknown or empty categories keep their original weight (1.0).
+CATEGORY_WEIGHTS: dict[str, float] = {"cont": 1.0, "ero": 0.25, "tech": 0.5}
+
+# --- FeatureIndex cross-request cache --------------------------------------
+# Building the index scans ~3k works and ~190k work_tags (~500 ms). The index
+# only depends on the database contents, so it is cached per database file and
+# invalidated by a cheap "data signature" of row counts / max rowids / newest
+# updated_at. Connections are never cached; only the finished, read-only index.
+_INDEX_CACHE_MAX_DBS = 4
+_index_cache: "OrderedDict[tuple[str, tuple[tuple[str, float], ...]], tuple[Any, Any]]" = OrderedDict()
+_index_cache_lock = threading.RLock()
+
+
+def _db_file(conn: sqlite3.Connection) -> str | None:
+    """Return the resolved path of the main database file, if it is file-backed."""
+    try:
+        row = conn.execute("PRAGMA database_list").fetchone()
+    except sqlite3.Error:
+        return None
+    if row is None:
+        return None
+    try:
+        file = row["file"]
+    except (IndexError, KeyError, TypeError):
+        file = row[2] if len(row) > 2 else None
+    if not file:
+        return None
+    try:
+        return str(Path(file).resolve())
+    except OSError:
+        return str(file)
+
+
+def _data_signature(conn: sqlite3.Connection) -> tuple[Any, ...]:
+    """Cheap fingerprint of everything FeatureIndex reads.
+
+    ``works.updated_at`` catches merges/renames that keep the row count stable;
+    the ``work_tags`` count and max rowid together catch deletions and tag
+    replacements (delete + insert keeps the count but bumps the max rowid).
+    Keeping the two work_tags aggregates in separate statements lets SQLite use
+    the covering index for the count and the rowid fast path for max(); the
+    combined form forces a full scan and is ~3x slower.
+    """
+    return (
+        tuple(
+            conn.execute(
+                "SELECT count(*), ifnull(max(rowid), 0), ifnull(max(updated_at), '') FROM works"
+            ).fetchone()
+        ),
+        tuple(conn.execute("SELECT count(*) FROM work_tags").fetchone()),
+        tuple(conn.execute("SELECT ifnull(max(rowid), 0) FROM work_tags").fetchone()),
+        tuple(conn.execute("SELECT count(*) FROM tags").fetchone()),
+        tuple(conn.execute("SELECT count(*) FROM companies").fetchone()),
+    )
+
+
+def _weights_key(category_weights: dict[str, float]) -> tuple[tuple[str, float], ...]:
+    return tuple(sorted((str(key), float(value)) for key, value in category_weights.items()))
+
+
+def clear_index_cache() -> None:
+    """Drop every cached FeatureIndex (tests and admin tools)."""
+    with _index_cache_lock:
+        _index_cache.clear()
+
 
 
 def _resolve_votes_db(
@@ -87,9 +158,47 @@ class FeatureIndex:
     works: dict[int, WorkFeature]
     tag_names: dict[int, str]
     company_names: dict[int, str]
+    nukige: set[int] = field(default_factory=set)
 
     @classmethod
-    def build(cls, conn: sqlite3.Connection) -> "FeatureIndex":
+    def build(
+        cls,
+        conn: sqlite3.Connection,
+        category_weights: dict[str, float] | None = None,
+    ) -> "FeatureIndex":
+        """Build (or return a cached) index for this database.
+
+        Results are cached per database file and validated against a cheap data
+        signature, so repeated requests reuse the ~500 ms build while any write
+        (insert, merge, tag change) transparently forces a rebuild. The
+        connection itself is never cached.
+        """
+        weights = dict(CATEGORY_WEIGHTS if category_weights is None else category_weights)
+        db_file = _db_file(conn)
+        if db_file is None:
+            # In-memory or otherwise file-less databases cannot be identified
+            # across connections, so skip the cache entirely.
+            return cls._build_uncached(conn, weights)
+        key = (db_file, _weights_key(weights))
+        signature = _data_signature(conn)
+        with _index_cache_lock:
+            cached = _index_cache.get(key)
+            if cached is not None and cached[0] == signature:
+                _index_cache.move_to_end(key)
+                return cached[1]
+            index = cls._build_uncached(conn, weights)
+            _index_cache[key] = (signature, index)
+            _index_cache.move_to_end(key)
+            while len(_index_cache) > _INDEX_CACHE_MAX_DBS:
+                _index_cache.popitem(last=False)
+            return index
+
+    @classmethod
+    def _build_uncached(
+        cls,
+        conn: sqlite3.Connection,
+        category_weights: dict[str, float],
+    ) -> "FeatureIndex":
         works: dict[int, WorkFeature] = {}
         for row in conn.execute(
             "SELECT id, title, release_year, length_minutes, rating, rating_count, nsfw, platforms, languages FROM works"
@@ -108,20 +217,26 @@ class FeatureIndex:
 
         tag_rows = conn.execute(
             """
-            SELECT wt.work_id, wt.tag_id, wt.weight, wt.spoiler, t.name
+            SELECT wt.work_id, wt.tag_id, wt.weight, wt.spoiler, t.name, t.category
             FROM work_tags wt JOIN tags t ON t.id = wt.tag_id
             """
         ).fetchall()
         tag_names: dict[int, str] = {}
         doc_freq: dict[int, int] = {}
+        nukige: set[int] = set()
         raw: dict[int, dict[int, float]] = {work_id: {} for work_id in works}
         for row in tag_rows:
             work_id = int(row["work_id"])
             tag_id = int(row["tag_id"])
             if work_id not in works:
                 continue
+            # tag_names keeps the original English name for recommendation reasons.
             tag_names[tag_id] = row["name"]
-            weight = max(0.1, float(row["weight"] or 1.0))
+            if str(row["name"]).casefold() == NUKIGE_TAG.casefold():
+                nukige.add(work_id)
+            category = row["category"]
+            category_weight = category_weights.get(category, 1.0) if category else 1.0
+            weight = max(0.1, float(row["weight"] or 1.0)) * category_weight
             if int(row["spoiler"] or 0) >= 2:
                 weight *= 0.6
             current = raw[work_id].get(tag_id, 0.0)
@@ -153,7 +268,7 @@ class FeatureIndex:
             if work_id in works:
                 works[work_id].company_ids.add(company_id)
 
-        return cls(works=works, tag_names=tag_names, company_names=company_names)
+        return cls(works=works, tag_names=tag_names, company_names=company_names, nukige=nukige)
 
 
 @dataclass
@@ -257,7 +372,9 @@ def _profile_source_name(profile_source: str | None, settings: dict[str, Any]) -
     if mode not in persona.allowed_sources():
         raise ValueError(f"unknown profile source: {profile_source!r}")
     if mode == "auto":
-        if settings.get("quiz_merge_home", True) and persona.has_mergeable_profile(settings):
+        # ``home_profile_sources`` is the single switch (``quiz_merge_home`` is
+        # only a derived compatibility field), so read it through persona.
+        if persona.has_mergeable_profile(settings):
             return "all"
         return "library"
     return mode
@@ -489,6 +606,7 @@ def recommend(
     *,
     limit: int = 20,
     include_nsfw: bool | None = None,
+    nsfw_policy: str | None = None,
     min_year: int | None = None,
     max_length_minutes: int | None = None,
     platform: str | None = None,
@@ -507,8 +625,11 @@ def recommend(
     database always degrades gracefully to content ranking.
     """
     settings = get_settings(conn)
-    if include_nsfw is None:
-        include_nsfw = bool(settings.get("include_nsfw", False))
+    policy = normalize_policy(
+        nsfw_policy if nsfw_policy is not None else settings.get("nsfw_policy")
+    )
+    if include_nsfw is not None and nsfw_policy is None:
+        policy = normalize_policy(include_nsfw)
     if min_year is None:
         min_year = settings.get("min_year")
     if max_length_minutes is None:
@@ -556,7 +677,7 @@ def recommend(
     for feature in index.works.values():
         if feature.id in excluded:
             continue
-        if not include_nsfw and feature.nsfw:
+        if not allows(policy, nsfw=feature.nsfw, is_nukige=feature.id in index.nukige):
             continue
         if min_year and feature.year and feature.year < min_year:
             continue

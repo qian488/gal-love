@@ -13,6 +13,7 @@ import type {
   ImportVndbInput,
   ManualWorkInput,
   MergeResult,
+  NsfwPolicy,
   PairwiseAnswerInput,
   PairwiseAnswerResponse,
   PairwiseNextResponse,
@@ -101,11 +102,11 @@ export const api = {
   persona: (key: string) => get<PersonaDetailResponse>(`/persona/${key}`),
   savePersona: (key: string, answers: Record<string, string>) =>
     post<PersonaDetailResponse>(`/persona/${key}`, { answers }),
-  pairwiseNext: (count = 1, includeNsfw = false) =>
-    get<PairwiseNextResponse>('/persona/pairwise/next', {
-      count,
-      include_nsfw: includeNsfw,
-    }),
+  pairwiseNext: (count = 1, nsfwPolicy?: NsfwPolicy) =>
+    get<PairwiseNextResponse>(
+      '/persona/pairwise/next',
+      nsfwPolicy ? { count, nsfw_policy: nsfwPolicy } : { count },
+    ),
   pairwiseAnswer: (data: PairwiseAnswerInput) =>
     post<PairwiseAnswerResponse>('/persona/pairwise/answer', data),
   pairwiseReset: () => post<PersonaDetailResponse>('/persona/pairwise/reset'),

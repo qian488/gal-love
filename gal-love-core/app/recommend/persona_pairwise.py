@@ -13,6 +13,7 @@ import sqlite3
 from typing import Any
 
 from ..normalize import now_iso
+from ..nsfw import allows, normalize_policy
 from ..repository import get_settings, get_work, set_settings
 from ..tag_zh import canonical_lookup
 from . import persona
@@ -126,7 +127,7 @@ def _jaccard(left: set[int], right: set[int]) -> float:
 
 
 def _candidates(
-    conn: sqlite3.Connection, index: FeatureIndex, include_nsfw: bool
+    conn: sqlite3.Connection, index: FeatureIndex, policy: str
 ) -> list[dict[str, Any]]:
     """抽样候选池：封面、标签、投票数与评分决定质量分。"""
     rows = conn.execute(
@@ -140,7 +141,7 @@ def _candidates(
     items: list[dict[str, Any]] = []
     for row in rows:
         work_id = int(row["id"])
-        if not include_nsfw and row["nsfw"]:
+        if not allows(policy, nsfw=bool(row["nsfw"]), is_nukige=work_id in index.nukige):
             continue
         feature = index.works.get(work_id)
         if feature is None or not feature.tag_ids:
@@ -198,7 +199,11 @@ def _select_pair(
 
 
 def next_pairs(
-    conn: sqlite3.Connection, *, count: int = 1, include_nsfw: bool = False
+    conn: sqlite3.Connection,
+    *,
+    count: int = 1,
+    include_nsfw: bool | None = None,
+    nsfw_policy: str | None = None,
 ) -> list[dict[str, Any]]:
     """返回若干组「左 vs 右」作品；数据不足时返回空列表。"""
     try:
@@ -207,8 +212,11 @@ def next_pairs(
         count = 1
     count = max(1, min(MAX_PAIRS, count))
 
+    policy = normalize_policy(
+        nsfw_policy if nsfw_policy is not None else (True if include_nsfw else "off")
+    )
     index = FeatureIndex.build(conn)
-    pool = _candidates(conn, index, include_nsfw)
+    pool = _candidates(conn, index, policy)
     if len(pool) < 2:
         return []
 

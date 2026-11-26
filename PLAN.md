@@ -330,6 +330,19 @@ GET    /api/admin/sync-runs       同步记录
 - [x] 前端 `/persona` 体系入口、`/persona/:key` 通用问卷与结果页、`/persona/pairwise`、`/persona/tarot`；旧 `/taste-quiz` 重定向到 `/persona/quiz`
 - [x] 后端 191 项测试通过，前端 `npm run build` 通过；OpenAPI 29 路径 / 33 操作；联调确认 7 套画像产出互不相同的推荐
 
+### Phase 7：性能、数据质量与工程化（完成）
+
+- [x] 推荐索引跨请求缓存：按「库文件 + 数据签名」失效，签名查询 ~10 ms，缓存命中后 `/api/recommendations` 从 0.64–0.75 s 降到 0.12 s（首次仍需 ~0.62 s 建索引）
+- [x] 标签按分类加权：`cont` 1.0 / `ero` 0.25 / `tech` 0.5；ero 标签在画像向量中的占比从 21.2% 降到 2.9%，题材信号不再被性描写标签稀释
+- [x] 中文标签扩充到 344 条（原 89 条）：非 ero 曝光覆盖率 9.2% → 62.6%，非 ero Top 280 全覆盖；`backfill_tag_names` 支持修补 `name_zh=''` 的历史行
+- [x] NSFW 三档策略 `off | story | all`（替代单一布尔）：`story` 保留成人剧情作、排除拔作，可选池 660 → 1988 → 2962；检索、推荐、二选一统一口径
+- [x] 设置语义收敛：`nsfw_policy` 与 `home_profile_sources` 成为唯一真相源，`include_nsfw` / `quiz_merge_home` 降为派生兼容字段，前后端不再各自维护开关
+- [x] `app/repository.py` 拆分为 `app/repository/` 包（works / entries / settings / sync），导入路径与 29 个函数签名保持不变
+- [x] `recommendations` 表按批次保留最近 20 批，避免长期累积
+- [x] 新增 GitHub Actions：后端 `pytest`、前端 `npm ci + build + test`；补充 `requirements.lock`
+- [x] 前端测试基建：vitest + @vue/test-utils + jsdom，覆盖 api 参数拼装、store 设置映射、画像入口渲染；删除无引用的 `TasteQuiz.vue`
+- [x] 后端 218 项测试、前端 7 项测试通过，`npm run build` 通过
+
 ---
 
 ## 8. 验收标准
@@ -357,7 +370,7 @@ GET    /api/admin/sync-runs       同步记录
 - **VNDB API 限流**：批量导入使用 dump 或分批任务
 - **Bangumi API 实验性**：缓存、重试、User-Agent 合规
 - **数据许可**：VNDB 数据 ODbL/DbCL；图片、简介可能有单独版权
-- **NSFW 内容**：默认过滤，可手动开启
+- **NSFW 内容**：默认 `off`（仅全年龄），可切到 `story`（含成人剧情作、排除拔作）或 `all`；三档口径在检索、推荐、二选一中一致
 - **重复作品**：跨源匹配先做标题精确/别名匹配，后续人工合并
 - **冷启动**：先选择喜欢的作品，再逐步建立画像
 - **个人偏见**：单用户评估容易过拟合，保留人工判断与留出集
@@ -379,3 +392,6 @@ GET    /api/admin/sync-runs       同步记录
 - 2026-11-26：完成 Phase 6 多画像体系：新增画像注册表与通用画像构建（`app/recommend/persona.py`），落地玩家动机、九型人格、大五人格、十二星座、作品二选一 5 套画像与塔罗抽牌；`profile_source` 支持 9 种来源，`all` 按可信度加权合并；设置新增 `home_profile_sources`；前端新增 `/persona` 入口、通用问卷页与三个专用页面，旧 `/taste-quiz` 重定向到 `/persona/quiz`。后端 191 项测试通过，前端构建通过，OpenAPI 29 路径 / 33 操作。
 - 2026-11-26：多画像联调：7 套体系全部注册可用；同一推荐请求在 `library / quiz / motivation / enneagram / bigfive / zodiac / pairwise` 下返回不同首条作品；塔罗同 seed 稳定、单张与三张牌阵标题正确；联调写入的画像数据已恢复，真实库仅保留原有问卷答案。
 - 后续可选：ALS 协同过滤、中文分词/拼音检索、封面本地代理缓存（当前为浏览器 IndexedDB 缓存，跨域图源无 CORS 时不缓存）、Bangumi 中文数据补充（待网络）、VNDB votes dump（待 dumps 站点恢复）
+- 2026-11-26：性能与数据质量：`FeatureIndex` 增加跨请求缓存（数据签名 ~10 ms 校验），`/api/recommendations` 0.64–0.75 s → 0.12 s；标签按 `category` 加权（ero 0.25 / tech 0.5），画像向量中 ero 占比 21.2% → 2.9%；中文标签 89 → 344 条，非 ero 曝光覆盖 9.2% → 62.6%。
+- 2026-11-26：工程化：`repository.py`（1097 行）拆为包；`recommendations` 按批保留 20 批；新增 GitHub Actions（pytest + npm ci/build/test）与 `requirements.lock`；前端引入 vitest（7 个用例）并删除无引用的 `TasteQuiz.vue`。后端 218 项、前端 7 项测试通过。
+- 2026-11-26：NSFW 策略与设置收敛：新增 `nsfw_policy`（off/story/all）替代布尔开关，`story` 档可选池 660 → 1988；`home_profile_sources` 成为唯一真相源，`include_nsfw` / `quiz_merge_home` 退为派生兼容字段。实测三档池 660 / 1988 / 2962，二选一在 `story` 档能取到成人剧情作。

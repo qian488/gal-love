@@ -41,13 +41,14 @@ class ManualWorkCreate(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
-    include_nsfw: bool | None = None
+    nsfw_policy: str | None = Field(default=None, pattern="^(off|story|all)$")
+    include_nsfw: bool | None = None  # 兼容旧客户端，写入时映射为 nsfw_policy
     min_year: int | None = Field(default=None, ge=1900, le=2100)
     max_length_minutes: int | None = Field(default=None, ge=1)
     platform: str | None = None
     language: str | None = None
     diversity: float | None = Field(default=None, ge=0, le=0.6)
-    quiz_merge_home: bool | None = None
+    quiz_merge_home: bool | None = None  # 兼容旧客户端，写入时映射为 home_profile_sources
     home_profile_sources: list[str] | None = None
 
 
